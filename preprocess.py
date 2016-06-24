@@ -10,44 +10,40 @@ import h5py
 import numpy as np
 from scipy.misc import imread, imresize
 
+import xmltodict
 
 """
-This file expects a JSON file containing ground-truth regions and captions
-in the same format as the region descriptions file from the Visual Genome
-website. Concretely, this is a single large JSON file containing a list;
-each element of the list describes a single image and has the following
-format:
+This file expects a VOC style data.
+0000xx.xml contains:
+folder:
+filename:
+source:
+owner:
+size:
+segmented:
+object:
+    name: class label
+    pose:
+    truncated: 0,1
+    difficult: 0,1
+    bndbox:
+        xmin
+        ymin
+        xmax
+        ymax
 
-{
-  "id": [int], Unique identifier for this image,
-  "regions": [
-    {
-      "id": [int] Unique identifier for this region,
-      "image": [int] ID of the image to which this region belongs,
-      "height": [int] Height of the region in pixels,
-      "width": [int] Width of the region in pixels,
-      "phrase": [string] Caption for this region,
-      "x": [int] x-coordinate of the upper-left corner of the region,
-      "y": [int] y-coordinate of the upper-left corner of the region,
-    },
-    ...
-  ]
-}
+The top-left pixel in the image has coordinate (1,1)
 
-We assume that all images are on disk in a single folder, and that
-the filename for each image is the same as its id with a .jpg extension.
-
-This file will be preprocessed into an HDF5 file and a JSON file with
-some auxiliary information. The captions will be tokenized with some
-basic preprocessing (split by words, remove special characters).
+The data will be preprocessed into an HDF5 file and a JSON file with
+some auxiliary information. The class label will be indexed by a number.
 
 Note, in general any indices anywhere in input/output of this file are 1-indexed.
 
 The output JSON file is an object with the following elements:
-- token_to_idx: Dictionary mapping strings to integers for encoding tokens, 
+- cls_to_idx: class labels to integers, 
                 in 1-indexed format.
 - filename_to_idx: Dictionary mapping string filenames to indices.
-- idx_to_token: Inverse of the above.
+- idx_to_cls: Inverse of the above.
 - idx_to_filename: Inverse of the above.
 
 The output HDF5 file has the following format to describe N images with
@@ -67,82 +63,56 @@ M total regions:
 - boxes: int32 array of shape (M, 4) giving the coordinates of each bounding box.
   Each row is (xc, yc, w, h) where yc and xc are center coordinates of the box,
   and are one-indexed.
-- lengths: int32 array of shape (M,) giving lengths of label sequence for each box
-- captions: int32 array of shape (M, L) giving the captions for each region.
-  Captions in the input with more than L = --max_token_length tokens are
-  discarded. To recover a token from an integer in this matrix,
-  use idx_to_token from the JSON output file. Padded with zeros.
+- labels: int32 array of shape (M,) giving the class label index  for each region.
+  To recover a class label from an integer in this matrix,
+  use idx_to_cls from the JSON output file.
+- difficult: int32 array of shape(M, ) giving if a region is difficult or not
 - img_to_first_box: int32 array of shape (N,). If img_to_first_box[i] = j then
-  captions[j] and boxes[j] give the first annotation for image i
+  labels[j] and boxes[j] give the first annotation for image i
   (using one-indexing).
 - img_to_last_box: int32 array of shape (N,). If img_to_last_box[i] = j then
-  captions[j] and boxes[j] give the last annotation for image i
+  labels[j] and boxes[j] give the last annotation for image i
   (using one-indexing).
 - box_to_img: int32 array of shape (M,). If box_to_img[i] = j then then
   regions[i] and captions[i] refer to images[j] (using one-indexing).
 """
 
-def build_vocab(data, min_token_instances, verbose=True):
-  """ Builds a set that contains the vocab. Filters infrequent tokens. """
-  token_counter = Counter()
-  for img in data:
-    for region in img['regions']:
-      if region['tokens'] is not None:
-        token_counter.update(region['tokens'])
-  vocab = set()
-  for token, count in token_counter.iteritems():
-    if count >= min_token_instances:
-      vocab.add(token)
-      
-  if verbose:
-    print ('Keeping %d / %d tokens with enough instances'
-              % (len(vocab), len(token_counter)))
-
-  if len(vocab) < len(token_counter):
-    vocab.add('<UNK>')
-    if verbose:
-      print('adding special <UNK> token.')
-  else:
-    if verbose: 
-      print('no <UNK> token needed.')
-
-  return vocab
-
-
-def build_vocab_dict(vocab):
-  token_to_idx, idx_to_token = {}, {}
+def build_cls_dict():
+  classes = ['__background__', 'aeroplane','bicycle','bird','boat','bottle','bus','car',
+              'cat','chair','cow','diningtable','dog','horse','motorbike',
+              'person','pottedplant','sheep','sofa','train','tvmonitor']
+  cls_to_idx, idx_to_cls = {}, {}
   next_idx = 1
 
-  for token in vocab:
-    token_to_idx[token] = next_idx
-    idx_to_token[next_idx] = token
+  for cls in classes:
+    cls_to_idx[cls] = next_idx
+    idx_to_cls[next_idx] = cls
     next_idx = next_idx + 1
     
-  return token_to_idx, idx_to_token
+  return cls_to_idx, idx_to_cls
 
+def getAnnotations(annopath, img_id):
+  anno = xmltodict.parse(open(annopath %(img_id)))
+  return anno['annotation']
 
-def encode_caption(tokens, token_to_idx, max_token_length):
-  encoded = np.zeros(max_token_length, dtype=np.int32)
-  for i, token in enumerate(tokens):
-    if token in token_to_idx:
-      encoded[i] = token_to_idx[token]
-    else:
-      encoded[i] = token_to_idx['<UNK>']
-  return encoded
+def getAllAnnotations(annopath, all_data):
+  data = []
+  for img_id in all_data:
+    tmp = getAnnotations(annopath, img_id)
+    tmp['id'] = img_id
+    if not type(tmp['object']) is list:
+      tmp['object'] = [tmp['object']]
+    data.append(tmp)
+  return data
 
-
-def encode_captions(data, token_to_idx, max_token_length):
+def encode_labels(data, cls_to_idx):
   encoded_list = []
-  lengths = []
-  for img in data:
-    for region in img['regions']:
-      tokens = region['tokens']
-      if tokens is None: continue
-      tokens_encoded = encode_caption(tokens, token_to_idx, max_token_length)
-      encoded_list.append(tokens_encoded)
-      lengths.append(len(tokens))
-  return np.vstack(encoded_list), np.asarray(lengths, dtype=np.int32)
-
+  difficult = []
+  for i, img in enumerate(data):
+    for region in img['object']:
+      encoded_list.append(cls_to_idx[region['name']])
+      difficult.append(region['difficult'])
+  return np.asarray(encoded_list, dtype=np.int32), np.asarray(difficult, dtype=np.int32)
 
 def encode_boxes(data, original_heights, original_widths, image_size):
   all_boxes = []
@@ -153,11 +123,12 @@ def encode_boxes(data, original_heights, original_widths, image_size):
   for i, img in enumerate(data):
     H, W = original_heights[i], original_widths[i]
     scale = float(image_size) / max(H, W)
-    for region in img['regions']:
-      if region['tokens'] is None: continue
+    for region in img['object']:
+      if region['name'] is None: continue
       # recall: x,y are 1-indexed
-      x, y = round(scale*(region['x']-1)+1), round(scale*(region['y']-1)+1)
-      w, h = round(scale*region['width']), round(scale*region['height'])  
+      x, y = round(scale*(int(region['bndbox']['xmin'])-1)+1), round(scale*(int(region['bndbox']['ymin'])-1)+1)
+      w = round(scale*(int(region['bndbox']['xmax'])-int(region['bndbox']['xmin'])))
+      h = round(scale*(int(region['bndbox']['ymax'])-int(region['bndbox']['ymin'])))
       
       # clamp to image
       if x < 1: x = 1
@@ -191,8 +162,8 @@ def build_img_idx_to_box_idxs(data):
   img_to_last_box = np.zeros(num_images, dtype=np.int32)
   for img in data:
     img_to_first_box[img_idx - 1] = box_idx
-    for region in img['regions']:
-      if region['tokens'] is None: continue
+    for region in img['object']:
+      if region['name'] is None: continue
       box_idx += 1
     img_to_last_box[img_idx - 1] = box_idx - 1 # -1 to make these inclusive limits
     img_idx += 1
@@ -201,13 +172,13 @@ def build_img_idx_to_box_idxs(data):
 
 def build_filename_dict(data):
   # First make sure all filenames
-  filenames_list = ['%d.jpg' % img['id'] for img in data]
+  filenames_list = [img['filename'] for img in data]
   assert len(filenames_list) == len(set(filenames_list))
   
   next_idx = 1
   filename_to_idx, idx_to_filename = {}, {}
   for img in data:
-    filename = '%d.jpg' % img['id']
+    filename = img['filename']
     filename_to_idx[filename] = next_idx
     idx_to_filename[next_idx] = filename
     next_idx += 1
@@ -216,15 +187,15 @@ def build_filename_dict(data):
 def encode_filenames(data, filename_to_idx):
   filename_idxs = []
   for img in data:
-    filename = '%d.jpg' % img['id']
+    filename = img['filename']
     idx = filename_to_idx[filename]
-    for region in img['regions']:
-      if region['tokens'] is None: continue
+    for region in img['object']:
+      if region['name'] is None: continue
       filename_idxs.append(idx)
   return np.asarray(filename_idxs, dtype=np.int32)
 
-def add_images(data, h5_file, args):
-  num_images = len(data)
+def add_images(imgpath, all_data, h5_file, args):
+  num_images = len(all_data) 
   
   shape = (num_images, 3, args.image_size, args.image_size)
   image_dset = h5_file.create_dataset('images', shape, dtype=np.uint8)
@@ -236,8 +207,8 @@ def add_images(data, h5_file, args):
   lock = Lock()
   q = Queue()
   
-  for i, img in enumerate(data):
-    filename = os.path.join(args.image_dir, '%s.jpg' % img['id'])
+  for i, img_id in enumerate(all_data):
+    filename = os.path.join(imgpath % img_id)
     q.put((i, filename))
     
   def worker():
@@ -257,7 +228,7 @@ def add_images(data, h5_file, args):
 
       lock.acquire()
       if i % 1000 == 0:
-        print 'Writing image %d / %d' % (i, len(data))
+        print 'Writing image %d / %d' % (i, len(all_data))
       original_heights[i] = H0
       original_widths[i] = W0
       image_heights[i] = H
@@ -278,67 +249,6 @@ def add_images(data, h5_file, args):
   h5_file.create_dataset('original_heights', data=original_heights)
   h5_file.create_dataset('original_widths', data=original_widths)
 
-def words_preprocess(phrase):
-  """ preprocess a sentence: lowercase, clean up weird chars, remove punctuation """
-  replacements = {
-    u'½': u'half',
-    u'—' : u'-',
-    u'™': u'',
-    u'¢': u'cent',
-    u'ç': u'c',
-    u'û': u'u',
-    u'é': u'e',
-    u'°': u' degree',
-    u'è': u'e',
-    u'…': u'',
-  }
-  for k, v in replacements.iteritems():
-    phrase = phrase.replace(k, v)
-  return str(phrase).lower().translate(None, string.punctuation).split()
-
-def split_filter_captions(data, max_token_length, tokens_type, verbose=True):
-  """
-  Modifies data in-place by adding a 'tokens' field to each region.
-  If the region's label is too long, 'tokens' will be None; otherwise
-  it will be a list of strings.
-  Splits by space when tokens_type = "words", or lists all chars when "chars"
-  """
-  captions_kept = 0
-  captions_removed = 0
-  for i, img in enumerate(data):
-    if verbose and (i + 1) % 2000 == 0:
-      print 'Splitting tokens in image %d / %d' % (i + 1, len(data))
-    regions_per_image = 0
-    img_kept, img_removed = 0, 0
-    for region in img['regions']:
-
-      # create tokens array
-      if tokens_type == 'words':
-        tokens = words_preprocess(region['phrase'])
-      elif tokens_type == 'chars':
-        tokens = list(region['label'])
-      else:
-        assert False, 'tokens_type must be "words" or "chars"'
-
-      # filter by length
-      if max_token_length > 0 and len(tokens) <= max_token_length:
-        region['tokens'] = tokens
-        captions_kept += 1
-        img_kept += 1
-        regions_per_image = regions_per_image + 1
-      else:
-        region['tokens'] = None
-        captions_removed += 1
-        img_removed += 1
-    
-    if regions_per_image == 0:
-      print 'kept %d, removed %d' % (img_kept, img_removed)
-      assert False, 'DANGER, some image has no valid regions. Not super sure this doesnt cause bugs. Think about more if it comes up'
-
-  if verbose:
-    print 'Keeping %d captions' % captions_kept
-    print 'Skipped %d captions for being too long' % captions_removed
-
 def encode_splits(data, split_data):
   """ Encode splits as intetgers and return the array. """
   lookup = {'train': 0, 'val': 1, 'test': 2}
@@ -347,8 +257,8 @@ def encode_splits(data, split_data):
   for split, idxs in split_data.iteritems():
     for idx in idxs:
       id_to_split[idx] = split
-  for i, img in enumerate(data):
-    split_array[i] = lookup[id_to_split[img['id']]]
+  for i, img_id in enumerate(data):
+    split_array[i] = lookup[id_to_split[img_id]]
   return split_array
 
 
@@ -364,44 +274,46 @@ def filter_images(data, split_data):
       new_data.append(img)
   return new_data
 
+def lines_from(f):
+    if not os.path.exists(f):
+        return []
+    lines = []
+    for line in open(f).readlines():
+        lines.append(line.strip('\n'))
+    return lines
 
 def main(args):
 
-  # read in the data
-  with open(args.region_data, 'r') as f:
-    data = json.load(f)
-  with open(args.split_json, 'r') as f:
-    split_data = json.load(f)
-
-  # Only keep images that are in a split
-  print 'There are %d images total' % len(data)
-  data = filter_images(data, split_data)
-  print 'After filtering for splits there are %d images' % len(data)
-
-  if args.max_images > 0:
-    data = data[:args.max_images]
+  # Get file path
+  annopath = args.datadir + 'Annotations/%s.xml'
+  imgpath = args.datadir + 'JPEGImages/%s.jpg'
+  imgsetpath = args.datadir + 'ImageSets/Main/%s.txt'
+  # read splits
+  split_data = {}
+  split_data['train'] = lines_from(imgsetpath %('train'))
+  split_data['val'] = lines_from(imgsetpath %('val'))
+  all_data = split_data['train'] + split_data['val']
 
   # create the output hdf5 file handle
   f = h5py.File(args.h5_output, 'w')
 
   # add several fields to the file: images, and the original/resized widths/heights
-  add_images(data, f, args)
+  add_images(imgpath, all_data, f, args)
 
   # add split information
-  split = encode_splits(data, split_data)
+  split = encode_splits(all_data, split_data)
   f.create_dataset('split', data=split)
 
-  # process "label" field in each region to a "tokens" field, and cap at some max length
-  split_filter_captions(data, args.max_token_length, args.tokens_type)
-
   # build vocabulary
-  vocab = build_vocab(data, args.min_token_instances) # vocab is a set()
-  token_to_idx, idx_to_token = build_vocab_dict(vocab) # both mappings are dicts
-    
+  cls_to_idx, idx_to_cls = build_cls_dict() # both mappings are dicts
+  
+  # get all annotations
+  data = getAllAnnotations(annopath, all_data)
+  
   # encode labels
-  captions_matrix, lengths_vector = encode_captions(data, token_to_idx, args.max_token_length)
-  f.create_dataset('labels', data=captions_matrix)
-  f.create_dataset('lengths', data=lengths_vector)
+  labels_matrix, difficult = encode_labels(data, cls_to_idx)
+  f.create_dataset('labels', data=labels_matrix)
+  f.create_dataset('difficult', data=difficult)
   
   # encode boxes
   original_heights = np.asarray(f['original_heights'])
@@ -420,8 +332,8 @@ def main(args):
 
   # and write the additional json file 
   json_struct = {
-    'token_to_idx': token_to_idx,
-    'idx_to_token': idx_to_token,
+    'cls_to_idx': cls_to_idx,
+    'idx_to_cls': idx_to_cls,
     'filename_to_idx': filename_to_idx,
     'idx_to_filename': idx_to_filename,
   }
@@ -433,39 +345,22 @@ if __name__ == '__main__':
   parser = argparse.ArgumentParser()
 
   # INPUT settings
-  parser.add_argument('--region_data',
-      default='data/visual-genome/region_descriptions.json',
-      help='Input JSON file with regions and captions')
-  parser.add_argument('--image_dir',
-      default='data/visual-genome/images',
-      help='Directory containing all images')
-  parser.add_argument('--split_json',
-      default='info/densecap_splits.json',
-      help='JSON file of splits')
-
+  parser.add_argument('--datadir',
+      default='/home/ruotian/code/fast-rcnn-torch/data/datasets/voc_2012/VOC2012/',
+      help='The directory of data')
   # OUTPUT settings
   parser.add_argument('--json_output',
-      default='data/VG-regions-dicts.json',
+      default='data/voc12-regions-dicts.json',
       help='Path to output JSON file')
   parser.add_argument('--h5_output',
-      default='data/VG-regions.h5',
+      default='data/voc12-regions.h5',
       help='Path to output HDF5 file')
 
   # OPTIONS
   parser.add_argument('--image_size',
       default=720, type=int,
       help='Size of longest edge of preprocessed images')  
-  parser.add_argument('--max_token_length',
-      default=15, type=int,
-      help="Set to 0 to disable filtering")
-  parser.add_argument('--min_token_instances',
-      default=15, type=int,
-      help="When token appears less than this times it will be mapped to <UNK>")
-  parser.add_argument('--tokens_type', default='words',
-      help="Words|chars for word or char split in captions")
   parser.add_argument('--num_workers', default=5, type=int)
-  parser.add_argument('--max_images', default=-1, type=int,
-      help="Set to a positive number to limit the number of images we process")
   args = parser.parse_args()
   main(args)
 
