@@ -17,6 +17,7 @@ require 'densecap.DataLoader'
 require 'densecap.DenseCapModel'
 require 'densecap.optim_updates'
 local utils = require 'densecap.utils'
+local utils = require 'densecap.utils'
 local opts = require 'train_opts'
 local models = require 'models'
 local eval_utils = require 'eval.eval_utils'
@@ -59,7 +60,7 @@ local iter = 1
 local optim_state = {}
 local cnn_optim_state = {}
 local best_val_score
-if string.len(opt.start_from) > 0 then
+if string.len(opt.checkpoint_start_from) > 0 then
   -- load protos from file
   print('initializing training information from ' .. opt.checkpoint_start_from)
   local loaded_checkpoint = torch.load(opt.start_from)

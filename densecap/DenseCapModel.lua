@@ -24,7 +24,7 @@ function DenseCapModel:__init(opt)
   opt.backend = utils.getopt(opt, 'backend', 'cudnn')
   opt.path_offset = utils.getopt(opt, 'path_offset', '')
   opt.dtype = utils.getopt(opt, 'dtype', 'torch.CudaTensor')
-  opt.vocab_size = utils.getopt(opt, 'vocab_size')
+  opt.num_classes = utils.getopt(opt, 'num_classes')
   opt.std = utils.getopt(opt, 'std', 0.01) -- Used to initialize new layers
 
   -- For test-time handling of final boxes
@@ -35,7 +35,7 @@ function DenseCapModel:__init(opt)
   utils.ensureopt(opt, 'mid_objectness_weight')
   utils.ensureopt(opt, 'end_box_reg_weight')
   utils.ensureopt(opt, 'end_objectness_weight')
-  utils.ensureopt(opt, 'classfication_weight')
+  utils.ensureopt(opt, 'classification_weight')
   
   --[[
   -- Options for RNN
@@ -149,7 +149,7 @@ function DenseCapModel:_buildRecognitionNet()
   --local lm_input = {pos_roi_codes, gt_labels}
   --local lm_output = self.nets.language_model(lm_input)
 
-  local classifier_input = {pos_roi_codes, gt_labels}
+  local classifier_input = pos_roi_codes
   local classifier_output = self.nets.classifier(classifier_input)
 
   -- Annotate nodes
@@ -332,7 +332,7 @@ function DenseCapModel:forward_test(input)
   local final_boxes = output[4]
   local objectness_scores = output[1]
   local labels = output[5]
-  local labels = self.nets.language_model:decodeSequence(labels)
+  local labels = self.nets.classifier:decodeResult(labels)
   return final_boxes, objectness_scores, labels
 end
 
@@ -448,8 +448,8 @@ function DenseCapModel:forward_backward(data)
   local grad_pos_roi_boxes, grad_final_box_trans = unpack(din)
 
   -- Compute classification loss
-  local target = self.nets.language_model:getTarget(gt_labels)
-  local classification_loss = self.crits.classification_crit:forward(classsifier_output, target)
+  local target = gt_labels
+  local classification_loss = self.crits.classification_crit:forward(classifier_output, target)
   classification_loss = classification_loss * self.opt.classification_weight
   local grad_classifier_output = self.crits.classification_crit:backward(classifier_output, target)
   grad_classifier_output:mul(self.opt.classification_weight)

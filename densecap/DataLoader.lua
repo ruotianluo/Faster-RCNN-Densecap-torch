@@ -170,7 +170,7 @@ function DataLoader:getBatch(opt)
   -- batch the boxes and labels
   assert(label_array:nDimension() == 1)
   assert(box_batch:nDimension() == 2)
-  label_array = label_array:view(1, label_array:size(1))
+  label_array = label_array:view(1, label_array:size(1), 1)
   box_batch = box_batch:view(1, box_batch:size(1), box_batch:size(2))
 
   -- finally pull the info from json file

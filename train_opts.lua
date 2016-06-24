@@ -37,15 +37,15 @@ function M.parse(arg)
     'Weight for box regression in the recognition network')
   cmd:option('-end_objectness_weight', 0.1,
     'Weight for box classification in the recognition network')
-  cmd:option('-captioning_weight',1.0, 'Weight for captioning loss')
+  cmd:option('-classification_weight',1.0, 'Weight for captioning loss')
   cmd:option('-weight_decay', 1e-6, 'L2 weight decay penalty strength')
   cmd:option('-box_reg_decay', 5e-5,
     'Strength of pull that boxes experience towards their anchor')
 
   -- Data input settings
-  cmd:option('-data_h5', 'data/VG-regions.h5', 
+  cmd:option('-data_h5', 'data/voc12-regions.h5', 
     'HDF5 file containing the preprocessed dataset (from proprocess.py)')
-  cmd:option('-data_json', 'data/VG-regions-dicts.json',
+  cmd:option('-data_json', 'data/voc12-regions-dicts.json',
     'JSON file containing additional dataset info (from preprocess.py)')
   cmd:option('-proposal_regions_h5', '',
     'override RPN boxes with boxes from this h5 file (empty = don\'t override)')
