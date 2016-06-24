@@ -71,6 +71,8 @@ function M.parse(arg)
     'How often to save model checkpoints')
   cmd:option('-checkpoint_path', 'checkpoint.t7',
     'Name of the checkpoint file to use')
+  cmd:option('-load_best_score', 0, 
+    'Do we load previous best score when resuming training.')
 
   -- Test-time model options (for evaluation)
   cmd:option('-test_rpn_nms_thresh', 0.7,

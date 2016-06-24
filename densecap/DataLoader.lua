@@ -13,14 +13,14 @@ function DataLoader:__init(opt)
   -- load the json file which contains additional information about the dataset
   print('DataLoader loading json file: ', self.json_file)
   self.info = utils.read_json(self.json_file)
-  self.vocab_size = utils.count_keys(self.info.idx_to_token)
+  self.num_classes = utils.count_keys(self.info.idx_to_cls)
 
   -- Convert keys in idx_to_token from string to integer
-  local idx_to_token = {}
-  for k, v in pairs(self.info.idx_to_token) do
-    idx_to_token[tonumber(k)] = v
+  local idx_to_cls = {}
+  for k, v in pairs(self.info.idx_to_cls) do
+    idx_to_cls[tonumber(k)] = v
   end
-  self.info.idx_to_token = idx_to_token
+  self.info.idx_to_cls = idx_to_cls
 
   -- open the hdf5 file
   print('DataLoader loading h5 file: ', self.h5_file)
@@ -33,7 +33,7 @@ function DataLoader:__init(opt)
   table.insert(keys, 'img_to_first_box')
   table.insert(keys, 'img_to_last_box')
   table.insert(keys, 'labels')
-  table.insert(keys, 'lengths')
+  table.insert(keys, 'difficult')
   table.insert(keys, 'original_heights')
   table.insert(keys, 'original_widths')
   table.insert(keys, 'split')
@@ -63,7 +63,6 @@ function DataLoader:__init(opt)
   self.num_regions = self.boxes:size(1)
   self.vgg_mean = torch.FloatTensor{103.939, 116.779, 123.68} -- BGR order
   self.vgg_mean = self.vgg_mean:view(1,3,1,1)
-  self.seq_length = self.labels:size(2)
 
   -- set up index ranges for the different splits
   self.train_ix = {}
@@ -79,48 +78,32 @@ function DataLoader:__init(opt)
   print(string.format('assigned %d/%d/%d images to train/val/test.', #self.train_ix, #self.val_ix, #self.test_ix))
 
   print('initialized DataLoader:')
-  print(string.format('#images: %d, #regions: %d, sequence max length: %d', 
-                      self.num_images, self.num_regions, self.seq_length))
+  print(string.format('#images: %d, #regions: %d', 
+                      self.num_images, self.num_regions))
 end
 
 function DataLoader:getImageMaxSize()
   return self.max_image_size
 end
 
-function DataLoader:getSeqLength()
-  return self.seq_length
+function DataLoader:getNumClasses()
+  return self.num_classes
 end
 
-function DataLoader:getVocabSize()
-  return self.vocab_size
-end
-
-function DataLoader:getVocab()
-  return self.info.idx_to_token
+function DataLoader:getClasses()
+  return self.info.idx_to_cls
 end
 
 --[[
 take a LongTensor of size DxN with elements 1..vocab_size+1 
 (where last dimension is END token), and decode it into table of raw text sentences
 --]]
-function DataLoader:decodeSequence(seq)
-  local D,N = seq:size(1), seq:size(2)
+function DataLoader:decodeResult(res)
+  local N = res:size(1)
   local out = {}
-  local itow = self.info.idx_to_token
+  local itoc = self.info.idx_to_cls
   for i=1,N do
-    local txt = ''
-    for j=1,D do
-      local ix = seq[{j,i}]
-      if ix >= 1 and ix <= self.vocab_size then
-        -- a word, translate it
-        if j >= 2 then txt = txt .. ' ' end -- space
-        txt = txt .. itow[tostring(ix)]
-      else
-        -- END token
-        break
-      end
-    end
-    table.insert(out, txt)
+    table.insert(out, itoc[res[N]])
   end
   return out
 end
@@ -185,9 +168,9 @@ function DataLoader:getBatch(opt)
   local box_batch = self.boxes[{ {r0,r1} }]
 
   -- batch the boxes and labels
-  assert(label_array:nDimension() == 2)
+  assert(label_array:nDimension() == 1)
   assert(box_batch:nDimension() == 2)
-  label_array = label_array:view(1, label_array:size(1), label_array:size(2))
+  label_array = label_array:view(1, label_array:size(1))
   box_batch = box_batch:view(1, box_batch:size(1), box_batch:size(2))
 
   -- finally pull the info from json file

@@ -397,8 +397,8 @@ function layer:_forward_train(input)
   local B1 = gt_boxes:size(2)
   assert(gt_boxes:dim() == 3 and gt_boxes:size(1) == N and gt_boxes:size(3) == 4,
          'gt_boxes must have shape (N, B1, 4)')
-  assert(gt_labels:dim() == 3 and gt_labels:size(1) == N and gt_labels:size(2) == B1,
-         'gt_labels must have shape (N, B1, L)')
+  assert(gt_labels:dim() == 2 and gt_labels:size(1) == N and gt_labels:size(2) == B1,
+         'gt_labels must have shape (N, B1)')
 
   self:reset_stats()
 

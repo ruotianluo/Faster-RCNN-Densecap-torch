@@ -39,9 +39,8 @@ end
 
 -- initialize the data loader class
 local loader = DataLoader(opt)
-opt.seq_length = loader:getSeqLength()
-opt.vocab_size = loader:getVocabSize()
-opt.idx_to_token = loader.info.idx_to_token
+opt.num_classes = loader:getNumClasses()
+opt.idx_to_cls = loader.info.idx_to_cls
 
 -- initialize the DenseCap model object
 local dtype = 'torch.CudaTensor'
@@ -52,13 +51,34 @@ local params, grad_params, cnn_params, cnn_grad_params = model:getParameters()
 print('total number of parameters in net: ', grad_params:nElement())
 print('total number of parameters in CNN: ', cnn_grad_params:nElement())
 
--------------------------------------------------------------------------------
--- Loss function
--------------------------------------------------------------------------------
+-- Initialize training information
 local loss_history = {}
 local all_losses = {}
 local results_history = {}
-local iter = 0
+local iter = 1
+local optim_state = {}
+local cnn_optim_state = {}
+local best_val_score
+if string.len(opt.start_from) > 0 then
+  -- load protos from file
+  print('initializing training information from ' .. opt.checkpoint_start_from)
+  local loaded_checkpoint = torch.load(opt.start_from)
+  iter = loaded_checkpoint.iter + 1 or iter
+  loss_history = loaded_checkpoint.loss_history or loss_history
+  all_losses = loaded_checkpoint.all_losses or all_losses
+  results_history = loaded_checkpoint.results_history or results_history
+  optim_state = loaded_checkpoint.optim_state or optim_state
+  cnn_optim_state = loaded_checkpoint.cnn_optim_state or cnn_optim_state
+  if opt.load_best_score == 1 then
+    best_val_score = loaded_checkpoint.best_val_score
+  end
+  loader.iterators = loaded_checkpoint.iterators or loader.iterators
+end
+
+-------------------------------------------------------------------------------
+-- Loss function
+-------------------------------------------------------------------------------
+
 local function lossFun()
   grad_params:zero()
   if opt.finetune_cnn_after ~= -1 and iter >= opt.finetune_cnn_after then
@@ -111,9 +131,6 @@ end
 -- Main loop
 -------------------------------------------------------------------------------
 local loss0
-local optim_state = {}
-local cnn_optim_state = {}
-local best_val_score = -1
 while true do  
 
   -- Compute loss and gradient
@@ -160,6 +177,11 @@ while true do
     checkpoint.iter = iter
     checkpoint.loss_history = loss_history
     checkpoint.results_history = results_history
+    checkpoint.all_losses = all_losses
+    checkpoint.optim_state = optim_state
+    checkpoint.cnn_optim_state = cnn_optim_state
+    checkpoint.best_val_score = best_val_score
+    checkpoint.iterators = loader.iterators
     cjson.encode_number_precision(4) -- number of sig digits to use in encoding
     cjson.encode_sparse_array(true, 2, 10)
     local text = cjson.encode(checkpoint)
@@ -169,7 +191,7 @@ while true do
     print('wrote ' .. opt.checkpoint_path .. '.json')
 
     -- Only save t7 checkpoint if there is an improvement in mAP
-    if results.ap_results.map > best_val_score then
+    if best_val_score == nil or results.ap_results.map > best_val_score then
       best_val_score = results.ap_results.map
       checkpoint.model = model
 
