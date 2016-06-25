@@ -35,8 +35,8 @@ cmd:option('-num_proposals', 1000)
 
 -- Input settings
 cmd:option('-input_image', '',
-  'A path to a single specific image to caption')
-cmd:option('-input_dir', '', 'A path to a directory with images to caption')
+  'A path to a single specific image to detect')
+cmd:option('-input_dir', '', 'A path to a directory with images to detect')
 cmd:option('-input_split', '',
   'A VisualGenome split identifier to process (train|val|test)')
 
@@ -74,14 +74,14 @@ function run_image(model, img_path, opt, dtype)
   img_caffe:add(-1, vgg_mean)
 
   -- Run the model forward
-  local boxes, scores, captions = model:forward_test(img_caffe:type(dtype))
+  local boxes, scores, labels = model:forward_test(img_caffe:type(dtype))
   local boxes_xywh = box_utils.xcycwh_to_xywh(boxes)
 
   local out = {
     img = img,
     boxes = boxes_xywh,
     scores = scores,
-    captions = captions,
+    labels = labels,
   }
   return out
 end
@@ -90,7 +90,7 @@ function result_to_json(result)
   local out = {}
   out.boxes = result.boxes:float():totable()
   out.scores = result.scores:float():view(-1):totable()
-  out.captions = result.captions
+  out.labels = result.labels
   return out
 end
 
@@ -102,14 +102,14 @@ function lua_render_result(result, opt)
   local boxes = result.boxes
   local num_boxes = math.min(opt.num_to_draw, boxes:size(1))
   boxes = boxes[{{1, num_boxes}}]
-  local captions_sliced = {}
+  local labels_sliced = {}
   for i = 1, num_boxes do
-    table.insert(captions_sliced, result.captions[i])
+    table.insert(labels_sliced, result.labels[i])
   end
 
   -- Convert boxes and draw output image
   local draw_opt = { text_size = opt.text_size, box_width = opt.box_width }
-  local img_out = vis_utils.densecap_draw(result.img, boxes, captions_sliced, draw_opt)
+  local img_out = vis_utils.densecap_draw(result.img, boxes, labels_sliced, draw_opt)
   return img_out
 end
 

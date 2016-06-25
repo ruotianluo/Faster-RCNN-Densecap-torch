@@ -59,9 +59,9 @@ function eval_utils.eval_split(kwargs)
     table.insert(all_losses, losses)
 
     -- Call forward_test to make predictions, and pass them to evaluator
-    local boxes, logprobs, captions = model:forward_test(data.image)
-    local gt_captions = model.nets.language_model:decodeSequence(gt_labels[1])
-    evaluator:addResult(logprobs, boxes, captions, gt_boxes[1], gt_captions)
+    local boxes, logprobs, labels = model:forward_test(data.image)
+    local gt_labels = model:decodeResult(gt_labels[1]) -- Different gt_labels!!
+    evaluator:addResult(logprobs, boxes, labels, gt_boxes[1], gt_labels)
     
     -- Print a message to the console
     local msg = 'Processed image %s (%d / %d) of split %d, detected %d regions'
@@ -98,6 +98,22 @@ function eval_utils.score_captions(records)
   os.execute('python eval/meteor_bridge.py')
   -- read out results
   local blob = utils.read_json('eval/output.json')
+  return blob
+end
+
+function eval_utils.score_labels(records)
+  -- serialize records to json file
+  local blob = {}
+  blob.scores = {}
+  for k,v in pairs(records) do
+    local c = v.candidate
+    local r = v.references[1]
+    if c == r then
+      table.insert(blob.scores, 1)
+    else
+      table.insert(blob.scores, 0)
+    end
+  end
   return blob
 end
 
@@ -163,6 +179,9 @@ function DenseCaptioningEvaluator:addResult(logprobs, boxes, text, target_boxes,
   -- merge ground truth boxes that overlap by >= 0.7
   local mergeix = box_utils.merge_boxes(target_boxes, 0.7) -- merge groups of boxes together
   local merged_boxes, merged_text = pluck_boxes(mergeix, target_boxes, target_text)
+  merged_boxes = target_boxes
+  merged_text = {}
+  for k,v in pairs(target_text) do table.insert(merged_text, {v}) end
 
   -- 1. Sort detections by decreasing confidence
   local Y,IX = torch.sort(logprobs,1,true) -- true makes order descending
@@ -228,7 +247,7 @@ function DenseCaptioningEvaluator:evaluate(verbose)
   -- concatenate everything across all images
   local logprobs = torch.cat(self.all_logprobs, 1) -- concat all logprobs
   -- call python to evaluate all records and get their BLEU/METEOR scores
-  local blob = eval_utils.score_captions(self.records, self.id) -- replace in place (prev struct will be collected)
+  local blob = eval_utils.score_labels(self.records) -- replace in place (prev struct will be collected)
   local scores = blob.scores -- scores is a list of scores, parallel to records
   collectgarbage()
   collectgarbage()

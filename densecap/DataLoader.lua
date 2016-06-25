@@ -103,7 +103,7 @@ function DataLoader:decodeResult(res)
   local out = {}
   local itoc = self.info.idx_to_cls
   for i=1,N do
-    table.insert(out, itoc[res[N]])
+    table.insert(out, itoc[res[i]])
   end
   return out
 end

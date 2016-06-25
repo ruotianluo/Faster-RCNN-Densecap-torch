@@ -179,8 +179,8 @@ while true do
     checkpoint.loss_history = loss_history
     checkpoint.results_history = results_history
     checkpoint.all_losses = all_losses
-    checkpoint.optim_state = optim_state
-    checkpoint.cnn_optim_state = cnn_optim_state
+    --checkpoint.optim_state = optim_state
+    --checkpoint.cnn_optim_state = cnn_optim_state
     checkpoint.best_val_score = best_val_score
     checkpoint.iterators = loader.iterators
     cjson.encode_number_precision(4) -- number of sig digits to use in encoding

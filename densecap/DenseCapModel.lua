@@ -9,6 +9,7 @@ require 'densecap.modules.BilinearRoiPooling'
 require 'densecap.modules.ApplyBoxTransform'
 require 'densecap.modules.LogisticCriterion'
 require 'densecap.modules.PosSlicer'
+require 'densecap.DataLoader'
 
 local box_utils = require 'densecap.box_utils'
 local utils = require 'densecap.utils'
@@ -47,6 +48,7 @@ function DenseCapModel:__init(opt)
   
     -- Options for Classfier
   opt.num_classes = utils.getopt(opt, 'num_classes')
+  opt.idx_to_cls = utils.getopt(opt, 'idx_to_cls')
   self.opt = opt -- TODO: this is... naughty. Do we want to create a copy instead?
   
   -- This will hold various components of the model
@@ -332,8 +334,23 @@ function DenseCapModel:forward_test(input)
   local final_boxes = output[4]
   local objectness_scores = output[1]
   local labels = output[5]
-  local labels = self.nets.classifier:decodeResult(labels)
+  local _, idx = torch.max(labels, 2)
+  local labels = self:decodeResult(idx)
   return final_boxes, objectness_scores, labels
+end
+
+--[[
+take a Tensor of size NxC  with probablity of each class, and decode it into table of raw text sentences
+--]]
+function DenseCapModel:decodeResult(res)
+  local N = res:size(1)
+  res = res:view(-1)
+  local out = {}
+  local itoc = self.opt.idx_to_cls
+  for i=1,N do
+    table.insert(out, itoc[res[i]])
+  end
+  return out
 end
 
 

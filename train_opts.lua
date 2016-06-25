@@ -67,7 +67,7 @@ function M.parse(arg)
     'Number of validation images to use for evaluation; -1 to use all')
 
   -- Model checkpointing
-  cmd:option('-save_checkpoint_every', 10000,
+  cmd:option('-save_checkpoint_every', 1000,
     'How often to save model checkpoints')
   cmd:option('-checkpoint_path', 'checkpoint.t7',
     'Name of the checkpoint file to use')
