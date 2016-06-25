@@ -90,7 +90,7 @@ function result_to_json(result)
   local out = {}
   out.boxes = result.boxes:float():totable()
   out.scores = result.scores:float():view(-1):totable()
-  out.labels = result.labels
+  out.captions = result.labels -- To fit the original view_results.html
   return out
 end
 
