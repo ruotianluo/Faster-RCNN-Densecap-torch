@@ -290,9 +290,10 @@ def main(args):
   imgsetpath = args.datadir + 'ImageSets/Main/%s.txt'
   # read splits
   split_data = {}
-  split_data['train'] = lines_from(imgsetpath %('train'))
-  split_data['val'] = lines_from(imgsetpath %('val'))
-  all_data = split_data['train'] + split_data['val']
+  split_data['train'] = lines_from(args.train_split or imgsetpath %('train'))
+  split_data['val'] = lines_from(args.val_split or imgsetpath %('val'))
+  split_data['test'] = lines_from(args.test_split or imgsetpath %('test'))
+  all_data = split_data['train'] + split_data['val'] + split_data['test']
 
   # create the output hdf5 file handle
   f = h5py.File(args.h5_output, 'w')
@@ -308,7 +309,7 @@ def main(args):
   cls_to_idx, idx_to_cls = build_cls_dict() # both mappings are dicts
   
   # get all annotations
-  data = getAllAnnotations(annopath, all_data)
+  data = getAllAnnotations(annopath, split_data['train'] + split_data['val'])
   
   # encode labels
   labels_matrix, difficult = encode_labels(data, cls_to_idx)
@@ -357,6 +358,15 @@ if __name__ == '__main__':
       help='Path to output HDF5 file')
 
   # OPTIONS
+  parser.add_argument('--train_split',
+      default=None, type=str,
+      help='Split file for train') 
+  parser.add_argument('--val_split',
+      default=None, type=str,
+      help='Split file for val') 
+  parser.add_argument('--test_split',
+      default=None, type=str,
+      help='Split file for test') 
   parser.add_argument('--image_size',
       default=720, type=int,
       help='Size of longest edge of preprocessed images')  

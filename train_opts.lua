@@ -17,10 +17,6 @@ function M.parse(arg)
     'Hidden size for the extra convolution in the RPN')
   cmd:option('-sampler_batch_size', 256,
     'Batch size to use in the box sampler')
-  cmd:option('-rnn_size', 512,
-    'Number of units to use at each layer of the RNN')
-  cmd:option('-input_encoding_size', 512,
-    'Dimension of the word vectors to use in the RNN')
   cmd:option('-sampler_high_thresh', 0.7,
     'Boxes with IoU greater than this with a GT box are considered positives')
   cmd:option('-sampler_low_thresh', 0.3,
@@ -63,11 +59,11 @@ function M.parse(arg)
     'Load model from a checkpoint instead of random initialization.')
   cmd:option('-finetune_cnn_after', -1,
     'Start finetuning CNN after this many iterations (-1 = never finetune)')
-  cmd:option('-val_images_use', 1000,
+  cmd:option('-val_images_use', -1,
     'Number of validation images to use for evaluation; -1 to use all')
 
   -- Model checkpointing
-  cmd:option('-save_checkpoint_every', 1000,
+  cmd:option('-save_checkpoint_every', 5000,
     'How often to save model checkpoints')
   cmd:option('-checkpoint_path', 'checkpoint.t7',
     'Name of the checkpoint file to use')
