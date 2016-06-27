@@ -117,7 +117,9 @@ function DenseCapModel:__init(opt)
     image_vector_dim=fc_dim,
   }
   self.nets.language_model = nn.LanguageModel(lm_opt)]]--
-  self.nets.classifier = nn.Linear(fc_dim, opt.num_classes)
+  self.nets.classifier = nn.Sequential()
+  self.nets.classifier:add(nn.Dropout())
+  self.nets.classifier:add(nn.Linear(fc_dim, opt.num_classes))
 
   self.nets.recog_net = self:_buildRecognitionNet()
   self.net:add(self.nets.recog_net)

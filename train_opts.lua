@@ -23,6 +23,8 @@ function M.parse(arg)
     'Boxes with IoU less than this with all GT boxes are considered negatives')
   cmd:option('-train_remove_outbounds_boxes', 1,
     'Whether to ignore out-of-bounds boxes for sampling at training time')
+  cmd:option('-reset_classifier', 0,
+    'Whether to reset the classfier, to avoid overfitting') -- Found overfitting in classfication val loss
   
   -- Loss function weights
   cmd:option('-mid_box_reg_weight', 0.05,
@@ -33,7 +35,7 @@ function M.parse(arg)
     'Weight for box regression in the recognition network')
   cmd:option('-end_objectness_weight', 0.1,
     'Weight for box classification in the recognition network')
-  cmd:option('-classification_weight',1.0, 'Weight for captioning loss')
+  cmd:option('-classification_weight',1.0, 'Weight for classification loss')
   cmd:option('-weight_decay', 1e-6, 'L2 weight decay penalty strength')
   cmd:option('-box_reg_decay', 5e-5,
     'Strength of pull that boxes experience towards their anchor')

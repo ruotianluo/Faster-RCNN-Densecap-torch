@@ -305,7 +305,7 @@ def main(args):
   split = encode_splits(all_data, split_data)
   f.create_dataset('split', data=split)
 
-  # build vocabulary
+  # build class label mapping
   cls_to_idx, idx_to_cls = build_cls_dict() # both mappings are dicts
   
   # get all annotations

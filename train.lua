@@ -63,7 +63,7 @@ local best_val_score
 if string.len(opt.checkpoint_start_from) > 0 then
   -- load protos from file
   print('initializing training information from ' .. opt.checkpoint_start_from)
-  local loaded_checkpoint = torch.load(opt.start_from)
+  local loaded_checkpoint = torch.load(opt.checkpoint_start_from)
   iter = loaded_checkpoint.iter + 1 or iter
   loss_history = loaded_checkpoint.loss_history or loss_history
   all_losses = loaded_checkpoint.all_losses or all_losses
@@ -179,8 +179,6 @@ while true do
     checkpoint.loss_history = loss_history
     checkpoint.results_history = results_history
     checkpoint.all_losses = all_losses
-    --checkpoint.optim_state = optim_state
-    --checkpoint.cnn_optim_state = cnn_optim_state
     checkpoint.best_val_score = best_val_score
     checkpoint.iterators = loader.iterators
     cjson.encode_number_precision(4) -- number of sig digits to use in encoding
@@ -194,6 +192,10 @@ while true do
     -- Only save t7 checkpoint if there is an improvement in mAP
     if best_val_score == nil or results.ap_results.map > best_val_score then
       best_val_score = results.ap_results.map
+      -- save the optim state, for better resuming
+      checkpoint.optim_state = optim_state
+      checkpoint.cnn_optim_state = cnn_optim_state
+      -- save the model
       checkpoint.model = model
 
       -- We want all checkpoints to be CPU compatible, so cast to float and
@@ -226,8 +228,8 @@ while true do
   if iter % 33 == 0 then collectgarbage() end
   if loss0 == nil then loss0 = losses.total_loss end
   if losses.total_loss > loss0 * 100 then
-    print('loss seems to be exploding, quitting.')
-    break
+    --print('loss seems to be exploding, quitting.')
+    --break
   end
   if opt.max_iters > 0 and iter >= opt.max_iters then break end
 end

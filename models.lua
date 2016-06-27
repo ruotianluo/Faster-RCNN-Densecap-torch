@@ -20,10 +20,15 @@ function M.setup(opt)
     model.opt.train_remove_outbounds_boxes = opt.train_remove_outbounds_boxes
     model.opt.classification_weight = opt.classification_weight
 
+    if opt.reset_classifier == 1 then -- Reset to avoid overfitting
+      model.nets.classifier:reset()
+    end
+
     if cudnn then
       cudnn.convert(model.net, cudnn)
       cudnn.convert(model.nets.localization_layer.nets.rpn, cudnn)
     end
+
   end
 
   -- Find all Dropout layers and set their probabilities
