@@ -184,7 +184,7 @@ def get_filepath(s):
   if 'train' in s:
     return os.path.join(s[s.find('train'):s.find('train') + 9], s)
   if 'val' in s:
-    return os.path.join(s[s.find('train'):s.find('train') + 7], s)
+    return os.path.join(s[s.find('val'):s.find('val') + 7], s)
   
 
 def add_images(data, h5_file, args):
