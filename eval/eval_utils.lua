@@ -33,7 +33,10 @@ function eval_utils.eval_split(kwargs)
   
   model:evaluate()
   loader:resetIterator(split)
-  local evaluator = DenseCaptioningEvaluator{id=id}
+  local evaluator = {}
+  for cls = 2, model.num_classes do -- Without background
+    evaluator[cls] = DenseCaptioningEvaluator{id=id}
+  end
 
   local counter = 0
   local all_losses = {}
@@ -59,9 +62,13 @@ function eval_utils.eval_split(kwargs)
     table.insert(all_losses, losses)
 
     -- Call forward_test to make predictions, and pass them to evaluator
-    local boxes, logprobs, labels = model:forward_test(data.image)
-    local gt_labels = model:decodeResult(gt_labels[1]) -- Different gt_labels!!
-    evaluator:addResult(logprobs, boxes, labels, gt_boxes[1], gt_labels)
+    local boxes, scores, labels = model:forward_test(data.image)
+    for cls = 2, model.num_classes do
+      sel_ind = torch.LongTensor(torch.find(gt_labels[1]:eq(cls), 1))
+      cls_gt_boxes = gt_boxes[1]:index(1, sel_ind)
+      evaluator[cls]:addResult(scores:select(2,cls), boxes:narrow(2, (cls-1)*4+1, 4),
+          cls_gt_boxes[1], model.idx_to_cls[cls])
+    end
     
     -- Print a message to the console
     local msg = 'Processed image %s (%d / %d) of split %d, detected %d regions'
@@ -80,7 +87,16 @@ function eval_utils.eval_split(kwargs)
   print(loss_results)
   print('Average loss: ', loss_results.total_loss)
   
-  local ap_results = evaluator:evaluate()
+  local ap_results = {}
+  for cls = 2, model.num_classes do
+    ap_results[cls] = evaluator[cls]:evaluate()
+  end
+  ap_results.map = {}
+  for k,v in pairs(ap_results) do
+    table.insert(ap_results.map, v['ov0.5'])
+  end
+  ap_results.map = utils.average_values(ap_results.map)
+
   print(string.format('mAP: %f', 100 * ap_results.map))
   
   local out = {
@@ -88,17 +104,6 @@ function eval_utils.eval_split(kwargs)
     ap_results=ap_results,
   }
   return out
-end
-
-
-function eval_utils.score_captions(records)
-  -- serialize records to json file
-  utils.write_json('eval/input.json', records)
-  -- invoke python process 
-  os.execute('python eval/meteor_bridge.py')
-  -- read out results
-  local blob = utils.read_json('eval/output.json')
-  return blob
 end
 
 function eval_utils.score_labels(records)
@@ -151,20 +156,18 @@ end
 
 local DenseCaptioningEvaluator = torch.class('DenseCaptioningEvaluator')
 function DenseCaptioningEvaluator:__init(opt)
-  self.all_logprobs = {}
+  self.all_scores = {}
   self.records = {}
   self.n = 1
   self.npos = 0
   self.id = utils.getopt(opt, 'id', '')
 end
 
--- boxes is (B x 4) are xcycwh, logprobs are (B x 2), target_boxes are (M x 4) also as xcycwh.
+-- boxes is (B x 4) are xcycwh, scores are (B, ), target_boxes are (M x 4) also as xcycwh.
 -- these can be both on CPU or on GPU (they will be shipped to CPU if not already so)
 -- predict_text is length B list of strings, target_text is length M list of strings.
-function DenseCaptioningEvaluator:addResult(logprobs, boxes, text, target_boxes, target_text)
-  assert(logprobs:size(1) == boxes:size(1))
-  assert(logprobs:size(1) == #text)
-  assert(target_boxes:size(1) == #target_text)
+function DenseCaptioningEvaluator:addResult(scores, boxes, target_boxes, class)
+  assert(scores:size(1) == boxes:size(1))
   assert(boxes:nDimension() == 2)
 
   -- convert both boxes to x1y1x2y2 coordinate systems
@@ -173,21 +176,21 @@ function DenseCaptioningEvaluator:addResult(logprobs, boxes, text, target_boxes,
 
   -- make sure we're on CPU
   boxes = boxes:float()
-  logprobs = logprobs[{ {}, 1 }]:double() -- grab the positives class (1)
+  scores = scores:double() -- grab the positives class (1)
   target_boxes = target_boxes:float()
 
   -- merge ground truth boxes that overlap by >= 0.7
-  local mergeix = box_utils.merge_boxes(target_boxes, 0.7) -- merge groups of boxes together
-  local merged_boxes, merged_text = pluck_boxes(mergeix, target_boxes, target_text)
-  merged_boxes = target_boxes
-  merged_text = {}
-  for k,v in pairs(target_text) do table.insert(merged_text, {v}) end
+  --local mergeix = box_utils.merge_boxes(target_boxes, 0.7) -- merge groups of boxes together
+  --local merged_boxes, merged_text = pluck_boxes(mergeix, target_boxes, target_text)
+  --merged_boxes = target_boxes
+  --merged_text = {}
+  --for k,v in pairs(target_text) do table.insert(merged_text, {v}) end
 
   -- 1. Sort detections by decreasing confidence
-  local Y,IX = torch.sort(logprobs,1,true) -- true makes order descending
+  local Y,IX = torch.sort(scores,1,true) -- true makes order descending
   
-  local nd = logprobs:size(1) -- number of detections
-  local nt = merged_boxes:size(1) -- number of gt boxes
+  local nd = scores:size(1) -- number of detections
+  local nt = target_boxes:size(1) -- number of gt boxes
   local used = torch.zeros(nt)
   for d=1,nd do -- for each detection in descending order of confidence
     local ii = IX[d]
@@ -197,7 +200,7 @@ function DenseCaptioningEvaluator:addResult(logprobs, boxes, text, target_boxes,
     local ovmax = 0
     local jmax = -1
     for j=1,nt do
-      local bbgt = merged_boxes[j]
+      local bbgt = target_boxes[j]
       local bi = {math.max(bb[1],bbgt[1]), math.max(bb[2],bbgt[2]),
                   math.min(bb[3],bbgt[3]), math.min(bb[4],bbgt[4])}
       local iw = bi[3]-bi[1]+1
@@ -225,10 +228,9 @@ function DenseCaptioningEvaluator:addResult(logprobs, boxes, text, target_boxes,
     local record = {}
     record.ok = ok -- whether this prediction can be counted toward a true positive
     record.ov = ovmax
-    record.candidate = text[ii]
-    record.references = merged_text[jmax] -- will be nil if jmax stays -1
+    record.candidate = class
     -- Replace nil with empty table to prevent crash in meteor bridge
-    if record.references == nil then record.references = {} end
+    --if record.references == nil then record.references = {} end
     record.imgid = self.n
     table.insert(self.records, record)
   end
@@ -236,19 +238,18 @@ function DenseCaptioningEvaluator:addResult(logprobs, boxes, text, target_boxes,
   -- keep track of results
   self.n = self.n + 1
   self.npos = self.npos + nt
-  table.insert(self.all_logprobs, Y:double()) -- inserting the sorted logprobs as double
+  table.insert(self.all_scores, Y:double()) -- inserting the sorted scores as double
 end
 
 function DenseCaptioningEvaluator:evaluate(verbose)
   if verbose == nil then verbose = true end
   local min_overlaps = {0.3, 0.4, 0.5, 0.6, 0.7}
-  local min_scores = {-1, 0, 0.05, 0.1, 0.15, 0.2, 0.25}
 
   -- concatenate everything across all images
-  local logprobs = torch.cat(self.all_logprobs, 1) -- concat all logprobs
+  local scores = torch.cat(self.all_scores, 1) -- concat all scores
   -- call python to evaluate all records and get their BLEU/METEOR scores
-  local blob = eval_utils.score_labels(self.records) -- replace in place (prev struct will be collected)
-  local scores = blob.scores -- scores is a list of scores, parallel to records
+  -- local blob = eval_utils.score_labels(self.records) -- replace in place (prev struct will be collected)
+  -- local scores = blob.scores -- scores is a list of scores, parallel to records
   collectgarbage()
   collectgarbage()
 
@@ -260,73 +261,67 @@ function DenseCaptioningEvaluator:evaluate(verbose)
         local txtgt = ''
         assert(type(record.references) == "table")
         for kk,vv in pairs(record.references) do txtgt = txtgt .. vv .. '. ' end
-        print(string.format('IMG %d PRED: %s, GT: %s, OK: %d, OV: %f SCORE: %f',
-              record.imgid, record.candidate, txtgt, record.ok, record.ov, scores[k]))
+        print(string.format('IMG %d PRED: %s, OK:%f, OV: %f SCORE: %f',
+              record.imgid, record.candidate, record.ok, record.ov, scores[k]))
       end  
     end
   end
 
   -- lets now do the evaluation
-  local y,ix = torch.sort(logprobs,1,true) -- true makes order descending
+  local y,ix = torch.sort(scores,1,true) -- true makes order descending
 
   local ap_results = {}
   local det_results = {}
   for foo, min_overlap in pairs(min_overlaps) do
-    for foo2, min_score in pairs(min_scores) do
+    -- go down the list and build tp,fp arrays
+    local n = y:nElement()
+    local tp = torch.zeros(n)
+    local fp = torch.zeros(n)
 
-      -- go down the list and build tp,fp arrays
-      local n = y:nElement()
-      local tp = torch.zeros(n)
-      local fp = torch.zeros(n)
-      for i=1,n do
-        -- pull up the relevant record
-        local ii = ix[i]
-        local r = self.records[ii]
+    for i=1,n do
+      -- pull up the relevant record
+      local ii = ix[i]
+      local r = self.records[ii]
 
-        if not r.references then 
-          fp[i] = 1 -- nothing aligned to this predicted box in the ground truth
+      if not r.references then 
+        fp[i] = 1 -- nothing aligned to this predicted box in the ground truth
+      else
+        -- ok something aligned. Lets check if it aligned enough, and correctly enough
+        local score = scores[ii]
+        if r.ov >= min_overlap and r.ok == 1 then
+          tp[i] = 1
         else
-          -- ok something aligned. Lets check if it aligned enough, and correctly enough
-          local score = scores[ii]
-          if r.ov >= min_overlap and r.ok == 1 and score > min_score then
-            tp[i] = 1
-          else
-            fp[i] = 1
-          end
+          fp[i] = 1
         end
       end
-
-      fp = torch.cumsum(fp,1)
-      tp = torch.cumsum(tp,1)
-      local rec = torch.div(tp, self.npos)
-      local prec = torch.cdiv(tp, fp + tp)
-
-      -- compute max-interpolated average precision
-      local ap = 0
-      local apn = 0
-      for t=0,1,0.01 do
-        local mask = torch.ge(rec, t):double()
-        local prec_masked = torch.cmul(prec:double(), mask)
-        local p = torch.max(prec_masked)
-        ap = ap + p
-        apn = apn + 1
-      end
-      ap = ap / apn
-
-      -- store it
-      if min_score == -1 then
-        det_results['ov' .. min_overlap] = ap
-      else
-        ap_results['ov' .. min_overlap .. '_score' .. min_score] = ap
-      end
     end
+
+    fp = torch.cumsum(fp,1)
+    tp = torch.cumsum(tp,1)
+    local rec = torch.div(tp, self.npos)
+    local prec = torch.cdiv(tp, fp + tp)
+
+    -- compute max-interpolated average precision
+    local ap = 0
+    local apn = 0
+    for t=0,1,0.01 do
+      local mask = torch.ge(rec, t):double()
+      local prec_masked = torch.cmul(prec:double(), mask)
+      local p = torch.max(prec_masked)
+      ap = ap + p
+      apn = apn + 1
+    end
+    ap = ap / apn
+
+    -- store it
+    ap_results['ov' .. min_overlap] = ap
   end
 
-  local map = utils.average_values(ap_results)
-  local detmap = utils.average_values(det_results)
+  --local map = utils.average_values(ap_results)
+  --local detmap = utils.average_values(det_results)
 
   -- lets get out of here
-  local results = {map = map, ap_breakdown = ap_results, detmap = detmap, det_breakdown = det_results}
+  local results = ap_results
   return results
 end
 

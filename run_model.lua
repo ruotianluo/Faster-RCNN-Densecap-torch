@@ -74,7 +74,18 @@ function run_image(model, img_path, opt, dtype)
   img_caffe:add(-1, vgg_mean)
 
   -- Run the model forward
-  local boxes, scores, labels = model:forward_test(img_caffe:type(dtype))
+  local boxes, scores = model:forward_test(img_caffe:type(dtype))
+
+  local _, idx = torch.max(labels, 2)
+
+  local _boxes = boxes.new(boxes:size(1), 4)
+  for i = 1, boxes:size(1) do
+    _boxes[{i, idx[i], {}}]:copy(boxes[i])
+  end
+  boxes = _boxes
+
+  local labels = self:decodeResult(idx)
+
   local boxes_xywh = box_utils.xcycwh_to_xywh(boxes)
 
   local out = {
