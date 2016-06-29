@@ -34,7 +34,7 @@ function eval_utils.eval_split(kwargs)
   model:evaluate()
   loader:resetIterator(split)
   local evaluator = {}
-  for cls = 2, model.num_classes do -- Without background
+  for cls = 2, model.opt.num_classes do -- Without background
     evaluator[cls] = DenseCaptioningEvaluator{id=id}
   end
 
@@ -62,19 +62,21 @@ function eval_utils.eval_split(kwargs)
     table.insert(all_losses, losses)
 
     -- Call forward_test to make predictions, and pass them to evaluator
-    local boxes, scores, labels = model:forward_test(data.image)
-    for cls = 2, model.num_classes do
-      sel_ind = torch.LongTensor(torch.find(gt_labels[1]:eq(cls), 1))
-      cls_gt_boxes = gt_boxes[1]:index(1, sel_ind)
-      evaluator[cls]:addResult(scores:select(2,cls), boxes:narrow(2, (cls-1)*4+1, 4),
-          cls_gt_boxes[1], model.idx_to_cls[cls])
+    local boxes, scores = model:forward_test(data.image)
+    for cls = 2, model.opt.num_classes do
+      local sel_inds = torch.range(1,gt_labels[1]:size(1))[gt_labels[1]:eq(cls)]:long()
+      if sel_inds:numel() > 0 then
+        local cls_gt_boxes = gt_boxes[1]:index(1, sel_inds):view(-1, 4)
+        evaluator[cls]:addResult(scores[cls-1], boxes[cls-1], -- table index start from 1
+          cls_gt_boxes, model.opt.idx_to_cls[cls])
+      end
     end
     
     -- Print a message to the console
     local msg = 'Processed image %s (%d / %d) of split %d, detected %d regions'
     local num_images = info.split_bounds[2]
     if max_images > 0 then num_images = math.min(num_images, max_images) end
-    local num_boxes = boxes:size(1)
+    local num_boxes = 0; for i = 1, #boxes do num_boxes = num_boxes + boxes[i]:size(1) end
     print(string.format(msg, info.filename, counter, num_images, split, num_boxes))
 
     -- Break out if we have processed enough images
@@ -88,7 +90,7 @@ function eval_utils.eval_split(kwargs)
   print('Average loss: ', loss_results.total_loss)
   
   local ap_results = {}
-  for cls = 2, model.num_classes do
+  for cls = 2, model.opt.num_classes do
     ap_results[cls] = evaluator[cls]:evaluate()
   end
   ap_results.map = {}
@@ -258,9 +260,6 @@ function DenseCaptioningEvaluator:evaluate(verbose)
     for k=1,#self.records do
       local record = self.records[k]
       if record.ov > 0 and record.ok == 1 and k % 1000 == 0 then
-        local txtgt = ''
-        assert(type(record.references) == "table")
-        for kk,vv in pairs(record.references) do txtgt = txtgt .. vv .. '. ' end
         print(string.format('IMG %d PRED: %s, OK:%f, OV: %f SCORE: %f',
               record.imgid, record.candidate, record.ok, record.ov, scores[k]))
       end  
@@ -271,7 +270,6 @@ function DenseCaptioningEvaluator:evaluate(verbose)
   local y,ix = torch.sort(scores,1,true) -- true makes order descending
 
   local ap_results = {}
-  local det_results = {}
   for foo, min_overlap in pairs(min_overlaps) do
     -- go down the list and build tp,fp arrays
     local n = y:nElement()

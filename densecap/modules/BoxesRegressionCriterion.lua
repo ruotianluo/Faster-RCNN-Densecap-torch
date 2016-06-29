@@ -29,7 +29,7 @@ Inputs:
 
 function crit:__init(w)
   parent.__init(self)
-  self.box_reg = nn.BoxRegerssionCriterion(w)
+  self.box_reg = nn.BoxRegressionCriterion(w)
 end
 
 
@@ -43,13 +43,13 @@ end
 function crit:updateOutput(input, target_boxes)
   local anchor_boxes, transforms, gt_labels = unpack(input)
   assert(transforms:dim() == 3, 'The bbox transforms should be 3-dim matrix')
-  local transforms_view = transforms:view(-1, 4)
+  local transforms_view = transforms:view(transforms:size(1), -1)
   local inds = gt_labels.new(gt_labels:size(1), 4)
   for i = 1, 4 do
     inds[{{},{i}}]:copy(torch.mul(gt_labels-1, 4)+i)
   end
   self.transform = transforms_view:gather(2, inds)
-  self.output = self.box_reg:forward({anchor_boxes, transform})
+  self.output = self.box_reg:forward({anchor_boxes, self.transform}, target_boxes)
   return self.output
 end
 
@@ -62,8 +62,8 @@ function crit:updateGradInput(input, target_boxes)
     inds[{{},{i}}]:copy(torch.mul(gt_labels-1, 4)+i)
   end
   local grad_transforms = transforms.new(#transforms):zero()
-  local grad_transforms_view = grad_transforms:view(-1, 4)
-  self.gradInput = self.box_reg:backward({anchor_boxes, self.transform})
+  local grad_transforms_view = grad_transforms:view(transforms:size(1), -1)
+  self.gradInput = self.box_reg:backward({anchor_boxes, self.transform}, target_boxes)
   grad_transforms_view:scatter(2, inds, self.gradInput[2])
   self.gradInput[2] = grad_transforms
   self.gradInput[3] = gt_labels.new()

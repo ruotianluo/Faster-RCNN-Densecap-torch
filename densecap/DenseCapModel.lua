@@ -35,7 +35,6 @@ function DenseCapModel:__init(opt)
   utils.ensureopt(opt, 'mid_box_reg_weight')
   utils.ensureopt(opt, 'mid_objectness_weight')
   utils.ensureopt(opt, 'end_box_reg_weight')
-  utils.ensureopt(opt, 'end_objectness_weight')
   utils.ensureopt(opt, 'classification_weight')
   
   --[[
@@ -273,25 +272,34 @@ function DenseCapModel:updateOutput(input)
     -- objectness scores, and the output from the language model
     local final_boxes_float = self.output[4]:float()
     local class_scores_float = self.output[1]:float()
-    local boxes_scores = torch.FloatTensor(final_boxes_float:size(1), 5)
-    local boxes_x1y1x2y2 = box_utils.xcycwh_to_x1y1x2y2(final_boxes_float)
-    boxes_scores[{{}, {1, 4}}]:copy(boxes_x1y1x2y2)
-    boxes_scores[{{}, 5}]:copy(class_scores_float[{{}, 1}])
-    local idx = box_utils.nms(boxes_scores, self.opt.final_nms_thresh)
-    self.output[4] = final_boxes_float:index(1, idx):typeAs(self.output[4])
-    self.output[1] = class_scores_float:index(1, idx):typeAs(self.output[1])
+    class_scores_float = nn.SoftMax():forward(class_scores_float)
+    
+    local final_boxes_output = {}
+    local class_scores_output = {}
+    
+    for cls = 2, self.opt.num_classes do 
+      local boxes_scores = torch.FloatTensor(final_boxes_float:size(1), 5)
+      local boxes_x1y1x2y2 = box_utils.xcycwh_to_x1y1x2y2(final_boxes_float:select(2, cls):contiguous())
+      boxes_scores[{{}, {1, 4}}]:copy(boxes_x1y1x2y2)
+      boxes_scores[{{}, 5}]:copy(class_scores_float[{{}, cls}])
+      local idx = box_utils.nms(boxes_scores, self.opt.final_nms_thresh)
+      table.insert(final_boxes_output, final_boxes_float:index(1, idx):select(2, cls):typeAs(self.output[4]))
+      table.insert(class_scores_output, class_scores_float:index(1, idx):select(2, cls):typeAs(self.output[1]))
+    end
+    self.output[4] = final_boxes_output
+    self.output[1] = class_scores_output
 
     -- TODO: In the old StnDetectionModel we also applied NMS to the
     -- variables dumped by the LocalizationLayer. Do we want to do that?
   end
-
-
+  
   return self.output
 end
 
 
 function DenseCapModel:extractFeatures(input)
   -- Make sure the input is (1, 3, H, W)
+  -- Not modifying
   assert(input:dim() == 4 and input:size(1) == 1 and input:size(2) == 3)
   local H, W = input:size(3), input:size(4)
   self.nets.localization_layer:setImageSize(H, W)
@@ -299,6 +307,7 @@ function DenseCapModel:extractFeatures(input)
   local output = self.net:forward(input)
   local final_boxes_float = output[4]:float()
   local class_scores_float = output[1]:float()
+  
   local boxes_scores = torch.FloatTensor(final_boxes_float:size(1), 5)
   local boxes_x1y1x2y2 = box_utils.xcycwh_to_x1y1x2y2(final_boxes_float)
   boxes_scores[{{}, {1, 4}}]:copy(boxes_x1y1x2y2)
@@ -327,10 +336,8 @@ Returns:
 function DenseCapModel:forward_test(input)
   self:evaluate()
   local output = self:forward(input)
-  local final_boxes = output[4]
+  local final_boxes = output[4] -- table of boxes of all classes
   local class_scores = output[1]
-  -- Turn the score to probability
-  class_scores = nn.SoftMax:forward(class_scores) -- To be determined
   return final_boxes, class_scores
 end
 
@@ -434,13 +441,8 @@ function DenseCapModel:forward_backward(data)
   local gt_boxes = out[5]
   local gt_labels = out[6]
 
-  local num_boxes = objectness_scores:size(1)
+  local num_boxes = class_scores:size(1)
   local num_pos = pos_roi_boxes:size(1)
-                                       
-  end_objectness_loss = end_objectness_loss * self.opt.end_objectness_weight
-  local grad_objectness_scores = self.crits.objectness_crit:backward(
-                                      objectness_scores, objectness_labels)
-  grad_objectness_scores:mul(self.opt.end_objectness_weight)
 
   -- Compute box regression loss; this one multiplies by the weight inside
   -- the criterion so we don't do it manually.
@@ -453,7 +455,7 @@ function DenseCapModel:forward_backward(data)
   local grad_pos_roi_boxes, grad_final_box_trans, _ = unpack(din)
 
   -- Compute classification loss
-  local target = torch.LongTensor(num_boxes):fill(1) --  1 means background
+  local target = gt_labels.new(num_boxes):fill(1) --  1 means background
   target[{{1, num_pos}}]:copy(gt_labels)
   local classification_loss = self.crits.classification_crit:forward(class_scores, target)
   classification_loss = classification_loss * self.opt.classification_weight
@@ -474,7 +476,7 @@ function DenseCapModel:forward_backward(data)
 
   -- Run the model backward
   local grad_out = {}
-  grad_out[1] = grad_classscores
+  grad_out[1] = grad_class_scores
   grad_out[2] = grad_pos_roi_boxes
   grad_out[3] = grad_final_box_trans
   grad_out[4] = out[4].new(#out[4]):zero()

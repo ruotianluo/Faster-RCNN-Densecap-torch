@@ -27,16 +27,16 @@ function M.parse(arg)
     'Whether to reset the classfier, to avoid overfitting') -- Found overfitting in classfication val loss
   
   -- Loss function weights
-  cmd:option('-mid_box_reg_weight', 0.05,
+  cmd:option('-mid_box_reg_weight', 1,
     'Weight for box regression in the RPN')
-  cmd:option('-mid_objectness_weight', 0.1,
+  cmd:option('-mid_objectness_weight', 1,
     'Weight for box classification in the RPN')
-  cmd:option('-end_box_reg_weight', 0.1,
+  cmd:option('-end_box_reg_weight', 1,
     'Weight for box regression in the recognition network')
   --[[cmd:option('-end_objectness_weight', 0.1,
     'Weight for box classification in the recognition network')]]--
   cmd:option('-classification_weight',1.0, 'Weight for classification loss')
-  cmd:option('-weight_decay', 1e-6, 'L2 weight decay penalty strength')
+  cmd:option('-weight_decay', 5e-4, 'L2 weight decay penalty strength')
   cmd:option('-box_reg_decay', 5e-5,
     'Strength of pull that boxes experience towards their anchor')
 
