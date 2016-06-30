@@ -65,11 +65,12 @@ function eval_utils.eval_split(kwargs)
     local boxes, scores = model:forward_test(data.image)
     for cls = 2, model.opt.num_classes do
       local sel_inds = torch.range(1,gt_labels[1]:size(1))[gt_labels[1]:eq(cls)]:long()
-      if sel_inds:numel() > 0 then
-        local cls_gt_boxes = gt_boxes[1]:index(1, sel_inds):view(-1, 4)
-        evaluator[cls]:addResult(scores[cls-1], boxes[cls-1], -- table index start from 1
-          cls_gt_boxes, model.opt.idx_to_cls[cls])
+      local cls_gt_boxes
+      if sel_inds:numel() ~= 0 then
+        cls_gt_boxes = gt_boxes[1]:index(1, sel_inds)
       end
+      evaluator[cls]:addResult(scores[cls-1], boxes[cls-1], -- table index start from 1
+          cls_gt_boxes, model.opt.idx_to_cls[cls])
     end
     
     -- Print a message to the console
@@ -174,7 +175,11 @@ function DenseCaptioningEvaluator:addResult(scores, boxes, target_boxes, class)
 
   -- convert both boxes to x1y1x2y2 coordinate systems
   boxes = box_utils.xcycwh_to_x1y1x2y2(boxes)
-  target_boxes = box_utils.xcycwh_to_x1y1x2y2(target_boxes)
+  if target_boxes == nil then
+    target_boxes = boxes.new()
+  else
+    target_boxes = box_utils.xcycwh_to_x1y1x2y2(target_boxes)
+  end
 
   -- make sure we're on CPU
   boxes = boxes:float()
@@ -192,7 +197,10 @@ function DenseCaptioningEvaluator:addResult(scores, boxes, target_boxes, class)
   local Y,IX = torch.sort(scores,1,true) -- true makes order descending
   
   local nd = scores:size(1) -- number of detections
-  local nt = target_boxes:size(1) -- number of gt boxes
+  local nt = 0
+  if target_boxes:numel() ~= 0 then
+    nt = target_boxes:size(1) -- number of gt boxes
+  end
   local used = torch.zeros(nt)
   for d=1,nd do -- for each detection in descending order of confidence
     local ii = IX[d]
@@ -220,7 +228,7 @@ function DenseCaptioningEvaluator:addResult(scores, boxes, target_boxes, class)
     end
 
     local ok = 1
-    if used[jmax] == 0 then
+    if jmax ~= -1 and used[jmax] == 0 then
       used[jmax] = 1 -- mark as taken
     else
       ok = 0
@@ -230,7 +238,9 @@ function DenseCaptioningEvaluator:addResult(scores, boxes, target_boxes, class)
     local record = {}
     record.ok = ok -- whether this prediction can be counted toward a true positive
     record.ov = ovmax
-    record.candidate = class
+    if jmax ~= -1 then
+      record.candidate = class
+    end
     -- Replace nil with empty table to prevent crash in meteor bridge
     --if record.references == nil then record.references = {} end
     record.imgid = self.n
@@ -281,7 +291,7 @@ function DenseCaptioningEvaluator:evaluate(verbose)
       local ii = ix[i]
       local r = self.records[ii]
 
-      if not r.references then 
+      if not r.candidate then 
         fp[i] = 1 -- nothing aligned to this predicted box in the ground truth
       else
         -- ok something aligned. Lets check if it aligned enough, and correctly enough

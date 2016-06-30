@@ -43,12 +43,12 @@ end
 function crit:updateOutput(input, target_boxes)
   local anchor_boxes, transforms, gt_labels = unpack(input)
   assert(transforms:dim() == 3, 'The bbox transforms should be 3-dim matrix')
-  local transforms_view = transforms:view(transforms:size(1), -1)
-  local inds = gt_labels.new(gt_labels:size(1), 4)
-  for i = 1, 4 do
-    inds[{{},{i}}]:copy(torch.mul(gt_labels-1, 4)+i)
+  assert(transforms:size(1) == gt_labels:size(1))
+  gt_labels = gt_labels:view(-1)
+  self.transform = transforms.new(transforms:size(1), 4)
+  for i = 1, self.transform:size(1) do
+    self.transform[i]:copy(transforms[{i, gt_labels[i]}])
   end
-  self.transform = transforms_view:gather(2, inds)
   self.output = self.box_reg:forward({anchor_boxes, self.transform}, target_boxes)
   return self.output
 end
@@ -57,14 +57,12 @@ end
 function crit:updateGradInput(input, target_boxes)
   local anchor_boxes, transforms, gt_labels = unpack(input)
   assert(transforms:dim() == 3, 'The bbox transforms should be 3-dim matrix')
-  local inds = gt_labels.new(gt_labels:size(1), 4)
-  for i = 1, 4 do
-    inds[{{},{i}}]:copy(torch.mul(gt_labels-1, 4)+i)
-  end
+  gt_labels = gt_labels:view(-1)
   local grad_transforms = transforms.new(#transforms):zero()
-  local grad_transforms_view = grad_transforms:view(transforms:size(1), -1)
   self.gradInput = self.box_reg:backward({anchor_boxes, self.transform}, target_boxes)
-  grad_transforms_view:scatter(2, inds, self.gradInput[2])
+  for i = 1, grad_transforms:size(1) do
+    grad_transforms[{i, gt_labels[i]}]:copy(self.gradInput[2][i])
+  end
   self.gradInput[2] = grad_transforms
   self.gradInput[3] = gt_labels.new()
   return self.gradInput
