@@ -77,7 +77,7 @@ function M.parse(arg)
     'Test-time NMS threshold to use in the RPN')
   cmd:option('-test_final_nms_thresh', 0.3,
     'Test-time NMS threshold to use for final outputs')
-  cmd:option('-test_num_proposals', 1000,
+  cmd:option('-test_num_proposals', 300,
     'Number of region proposal to use at test-time')
 
   -- Visualization

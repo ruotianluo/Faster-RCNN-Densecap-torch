@@ -91,7 +91,11 @@ local function lossFun()
   local timer = torch.Timer()
   local info
   local data = {}
-  data.image, data.gt_boxes, data.gt_labels, info, data.region_proposals = loader:getBatch()
+  local loading_time = utils.timeit(function()
+    data.image, data.gt_boxes, data.gt_labels, info, data.region_proposals = loader:getBatch()
+  end)
+  print('Loading batch time:\t' .. loading_time)
+  -- data.image, data.gt_boxes, data.gt_labels, info, data.region_proposals = loader:getBatch()
   for k, v in pairs(data) do
     data[k] = v:type(dtype)
   end
@@ -108,7 +112,12 @@ local function lossFun()
   if opt.progress_dump_every > 0 and iter % opt.progress_dump_every == 0 then
     model.dump_vars = true
   end
-  local losses, stats = model:forward_backward(data)
+  local losses, stats
+  local fb_time = utils.timeit(function()
+    losses, stats = model:forward_backward(data)
+  end)
+  print('Forward-backward time:\t' .. fb_time)
+  -- local losses, stats = model:forward_backward(data)
 
   -- Apply L2 regularization
   if opt.weight_decay > 0 then

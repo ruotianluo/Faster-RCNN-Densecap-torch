@@ -136,6 +136,16 @@ function utils.average_values(t)
   return vsum / n
 end
 
+-- Count the time of a function
+function utils.timeit(f)
+  utils.timer = utils.timer or torch.Timer()
+  cutorch.synchronize()
+  utils.timer:reset()
+  f()
+  cutorch.synchronize()
+  return utils.timer:time().real
+end
+
 -- Stash global statistics here.
 -- Since loading files with require caches and does not reload the same file,
 -- all places that require 'utils' will have access to this table.
