@@ -13,7 +13,7 @@ require 'lfs'
 require 'nn'
 local cjson = require 'cjson'
 
-require 'densecap.DataLoader'
+require 'densecap.DataLoader_new'
 require 'densecap.DenseCapModel'
 require 'densecap.optim_updates'
 local utils = require 'densecap.utils'

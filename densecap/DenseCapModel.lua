@@ -9,7 +9,7 @@ require 'densecap.modules.BilinearRoiPooling'
 require 'densecap.modules.ApplyBoxesTransform'
 require 'densecap.modules.LogisticCriterion'
 require 'densecap.modules.PosSlicer'
-require 'densecap.DataLoader'
+require 'densecap.DataLoader_new'
 
 local box_utils = require 'densecap.box_utils'
 local utils = require 'densecap.utils'
