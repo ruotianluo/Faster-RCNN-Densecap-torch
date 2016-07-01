@@ -51,10 +51,16 @@ function M.parse(arg)
     'Use this many training images (for debugging); -1 to use all images')
 
   -- Optimization
+  cmd:option('-optim', 'adam', 'what update to use? rmsprop|sgd|sgdmom|adagrad|adam')
   cmd:option('-learning_rate', 1e-5, 'learning rate to use')
-  cmd:option('-optim_beta1', 0.9, 'beta1 for adam')
-  cmd:option('-optim_beta2', 0.999, 'beta2 for adam')
+  cmd:option('-optim_alpha', 0.9, 'alpha for adagrad/rmsprop/momentum/adam')
+  cmd:option('-optim_beta', 0.999, 'beta used for adam')
   cmd:option('-optim_epsilon', 1e-8, 'epsilon for smoothing')
+  cmd:option('-cnn_optim',' adam', 'optimization to use for CNN')
+  cmd:option('-cnn_optim_alpha', 0.9,' alpha for momentum of CNN')
+  cmd:option('-cnn_optim_beta', 0.999, 'alpha for momentum of CNN')
+  cmd:option('-cnn_learning_rate', 1e-5, 'learning rate for the CNN')
+
   cmd:option('-drop_prob', 0.5, 'Dropout strength throughout the model.')
   cmd:option('-max_iters', -1, 'Number of iterations to run; -1 to run forever')
   cmd:option('-checkpoint_start_from', '',

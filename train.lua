@@ -147,13 +147,34 @@ while true do
   local losses, stats = lossFun()
 
   -- Parameter update
-  adam(params, grad_params, opt.learning_rate, opt.optim_beta1,
-       opt.optim_beta2, opt.optim_epsilon, optim_state)
+  -- perform a parameter update
+  if opt.optim == 'rmsprop' then
+    rmsprop(params, grad_params, opt.learning_rate, opt.optim_alpha, opt.optim_epsilon, optim_state)
+  elseif opt.optim == 'adagrad' then
+    adagrad(params, grad_params, opt.learning_rate, opt.optim_epsilon, optim_state)
+  elseif opt.optim == 'sgd' then
+    sgd(params, grad_params, opt.learning_rate)
+  elseif opt.optim == 'sgdm' then
+    sgdm(params, grad_params, opt.learning_rate, opt.optim_alpha, optim_state)
+  elseif opt.optim == 'sgdmom' then
+    sgdmom(params, grad_params, opt.learning_rate, opt.optim_alpha, optim_state)
+  elseif opt.optim == 'adam' then
+    adam(params, grad_params, opt.learning_rate, opt.optim_alpha, opt.optim_beta, opt.optim_epsilon, optim_state)
+  else
+    error('bad option opt.optim')
+  end
 
   -- Make a step on the CNN if finetuning
   if opt.finetune_cnn_after >= 0 and iter >= opt.finetune_cnn_after then
-    adam(cnn_params, cnn_grad_params, opt.learning_rate,
-         opt.optim_beta1, opt.optim_beta2, opt.optim_epsilon, cnn_optim_state)
+    if opt.cnn_optim == 'sgd' then
+      sgd(cnn_params, cnn_grad_params, opt.cnn_learning_rate)
+    elseif opt.cnn_optim == 'sgdm' then
+      sgdm(cnn_params, cnn_grad_params, opt.cnn_learning_rate, opt.cnn_optim_alpha, cnn_optim_state)
+    elseif opt.cnn_optim == 'adam' then
+      adam(cnn_params, cnn_grad_params, opt.cnn_learning_rate, opt.cnn_optim_alpha, opt.cnn_optim_beta, opt.optim_epsilon, cnn_optim_state)
+    else
+      error('bad option for opt.cnn_optim')
+    end
   end
 
   -- print loss and timing/benchmarks
