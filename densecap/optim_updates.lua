@@ -58,7 +58,7 @@ function adam(x, dx, lr, beta1, beta2, epsilon, state)
   local beta2 = beta2 or 0.999
   local epsilon = epsilon or 1e-8
 
-  if not state.m then
+  if not state.t then
     -- Initialization
     state.t = 0
     -- Exponential moving average of gradient values
