@@ -25,7 +25,9 @@ function M.parse(arg)
     'Whether to ignore out-of-bounds boxes for sampling at training time')
   cmd:option('-reset_classifier', 0,
     'Whether to reset the classfier, to avoid overfitting') -- Found overfitting in classfication val loss
-  
+  cmd:option('-anchor_type', 'densecap',
+    '\"densecap\", \"voc\", \"coco\"')
+
   -- Loss function weights
   cmd:option('-mid_box_reg_weight', 1,
     'Weight for box regression in the RPN')
@@ -49,6 +51,8 @@ function M.parse(arg)
     'override RPN boxes with boxes from this h5 file (empty = don\'t override)')
   cmd:option('-debug_max_train_images', -1,
     'Use this many training images (for debugging); -1 to use all images')
+  cmd:option('-image_size', "720",
+    '\"720\" means longer side to be 720, \"^600\" means shorter side to be 600.')
 
   -- Optimization
   cmd:option('-optim', 'adam', 'what update to use? rmsprop|sgd|sgdmom|adagrad|adam')
@@ -56,7 +60,7 @@ function M.parse(arg)
   cmd:option('-optim_alpha', 0.9, 'alpha for adagrad/rmsprop/momentum/adam')
   cmd:option('-optim_beta', 0.999, 'beta used for adam')
   cmd:option('-optim_epsilon', 1e-8, 'epsilon for smoothing')
-  cmd:option('-cnn_optim',' adam', 'optimization to use for CNN')
+  cmd:option('-cnn_optim','adam', 'optimization to use for CNN')
   cmd:option('-cnn_optim_alpha', 0.9,' alpha for momentum of CNN')
   cmd:option('-cnn_optim_beta', 0.999, 'alpha for momentum of CNN')
   cmd:option('-cnn_learning_rate', 1e-5, 'learning rate for the CNN')

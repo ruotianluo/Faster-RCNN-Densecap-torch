@@ -27,6 +27,7 @@ function DenseCapModel:__init(opt)
   opt.dtype = utils.getopt(opt, 'dtype', 'torch.CudaTensor')
   opt.num_classes = utils.getopt(opt, 'num_classes')
   opt.std = utils.getopt(opt, 'std', 0.01) -- Used to initialize new layers
+  opt.anchor_type = utils.getopt(opt, 'anchor_type', 'densecap') -- Used to define anchor type
 
   -- For test-time handling of final boxes
   opt.final_nms_thresh = utils.getopt(opt, 'final_nms_thresh', 0.3)

@@ -75,6 +75,7 @@ function layer:__init(opt)
   opt.zero_box_conv = utils.getopt(opt, 'zero_box_conv', true)
   opt.std = utils.getopt(opt, 'std', 0.01)
   opt.anchor_scale = utils.getopt(opt, 'anchor_scale', 1.0)
+  opt.anchor_type = utils.getopt(opt, 'anchor_type', 'densecap')
 
   opt.sampler_batch_size = utils.getopt(opt, 'sampler_batch_size', 256)
   opt.sampler_high_thresh = utils.getopt(opt, 'sampler_high_thresh', 0.7)
@@ -604,18 +605,38 @@ function layer:updateGradInput(input, gradOutput)
   return self.gradInput
 end
 
-
--- RPN returns {boxes, anchors, transforms, scores}
-function build_rpn(opt)
-  -- Set up anchor sizes
-  local anchors = opt.anchors
-  if not anchors then
+-- Generate anchors
+function generate_anchors(opt)
+  local anchors
+  if opt.anchor_type == 'densecap' then
     anchors = torch.Tensor({
                 {45, 90}, {90, 45}, {64, 64},
                 {90, 180}, {180, 90}, {128, 128},
                 {181, 362}, {362, 181}, {256, 256},
                 {362, 724}, {724, 362}, {512, 512},
               }):t():clone()
+  elseif opt.anchor_type == 'voc' then
+    anchors = torch.Tensor({
+                {184, 96}, {368, 192}, {736, 384},
+                {128, 128}, {256, 256}, {512, 512},
+                {88, 176}, {176, 352}, {352, 704},
+              }):t():clone()
+  elseif opt.anchor_type == 'coco' then
+    anchors = torch.Tensor({
+                {92, 48}, {184, 96}, {368, 192}, {736, 384},
+                {64, 64}, {128, 128}, {256, 256}, {512, 512},
+                {44, 88}, {88, 176}, {176, 352}, {352, 704},
+              }):t():clone()
+  end
+  return anchors
+end
+
+-- RPN returns {boxes, anchors, transforms, scores}
+function build_rpn(opt)
+  -- Set up anchor sizes
+  local anchors = opt.anchors
+  if not anchors then
+    anchors = generate_anchors(opt)
     anchors:mul(opt.anchor_scale)
   end
   local num_anchors = anchors:size(2)

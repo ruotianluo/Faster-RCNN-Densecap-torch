@@ -170,6 +170,8 @@ while true do
       sgd(cnn_params, cnn_grad_params, opt.cnn_learning_rate)
     elseif opt.cnn_optim == 'sgdm' then
       sgdm(cnn_params, cnn_grad_params, opt.cnn_learning_rate, opt.cnn_optim_alpha, cnn_optim_state)
+    elseif opt.cnn_optim == 'sgdmom' then
+      sgdmom(cnn_params, cnn_grad_params, opt.cnn_learning_rate, opt.cnn_optim_alpha, cnn_optim_state)
     elseif opt.cnn_optim == 'adam' then
       adam(cnn_params, cnn_grad_params, opt.cnn_learning_rate, opt.cnn_optim_alpha, opt.cnn_optim_beta, opt.optim_epsilon, cnn_optim_state)
     else
