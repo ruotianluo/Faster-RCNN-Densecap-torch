@@ -186,6 +186,13 @@ function layer:setGroundTruth(gt_boxes, gt_labels)
   self._called_backward_gt = false
 end
 
+-- This needs to be called before each forward pass, 
+function layer:setRegionProposals(rp)
+  self.reg_proposals = rp
+  self._called_forward_rp = false
+  self._called_backward_rp = false
+end
+
 
 function layer:reset_stats()
   self.stats = {}
@@ -214,6 +221,7 @@ function layer:clearState()
   self.roi_boxes:set()
   self.nets.rpn:clearState()
   self.nets.roi_pooling:clearState()
+  self.reg_proposals = nil
 end
 
 
@@ -261,9 +269,20 @@ function layer:_forward_test(input)
          'Must call setImageSize before each forward pass')
   self._called_forward_size = true
 
+  -- Make sure regions proposal is newly set
+  if self._called_forward_rp == true then
+    self:setRegionProposals(nil)
+  else
+    self._called_forward_rp = true
+  end
+
   local rpn_out
   self:timeit('rpn:forward_test', function()
-    rpn_out = self.nets.rpn:forward(cnn_features)
+    if self.reg_proposals ~= nil then
+      rpn_out = self.reg_proposals
+    else
+      rpn_out = self.nets.rpn:forward(cnn_features)
+    end
   end)
   local rpn_boxes, rpn_anchors = rpn_out[1], rpn_out[2]
   local rpn_trans, rpn_scores = rpn_out[3], rpn_out[4]
@@ -393,6 +412,13 @@ function layer:_forward_train(input)
          'Must call setImageSize before each forward pass')
   self._called_forward_size = true
 
+  -- Make sure regions proposal is newly set
+  if self._called_forward_rp == true then
+    self:setRegionProposals(nil)
+  else
+    self._called_forward_rp = true
+  end
+
   local N = cnn_features:size(1)
   assert(N == 1, 'Only minibatches with N = 1 are supported')
   local B1 = gt_boxes:size(2)
@@ -405,7 +431,11 @@ function layer:_forward_train(input)
 
   -- Run the RPN forward
   self:timeit('rpn:forward', function()
-    self.rpn_out = self.nets.rpn:forward(cnn_features)
+    if self.reg_proposals ~= nil then
+      self.rpn_out = self.reg_proposals
+    else
+      self.rpn_out = self.nets.rpn:forward(cnn_features)
+    end
     self.rpn_boxes = self.rpn_out[1]
     self.rpn_anchors = self.rpn_out[2]
     self.rpn_trans = self.rpn_out[3]
@@ -537,6 +567,13 @@ function layer:updateGradInput(input, gradOutput)
          'Must call setImageSize before each forward pass')
   self._called_backward_size = true
 
+  -- Make sure regions proposal is newly set
+  if self._called_backward_rp == true then
+    self:setRegionProposals(nil)
+  else
+    self._called_backward_rp = true
+  end
+
   local cnn_features = input
   local gt_boxes = self.gt_boxes
   local gt_labels = self.gt_labels
@@ -598,8 +635,10 @@ function layer:updateGradInput(input, gradOutput)
   
   -- Backprop RPN
   self:timeit('rpn:backward', function()
-    local din = self.nets.rpn:backward(cnn_features, grad_rpn_out)
-    grad_cnn_features:add(din)
+    if self.reg_proposals == nil then
+      local din = self.nets.rpn:backward(cnn_features, grad_rpn_out)
+      grad_cnn_features:add(din)
+    end
   end)
   
   return self.gradInput

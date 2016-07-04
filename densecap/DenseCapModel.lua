@@ -1,6 +1,7 @@
 require 'torch'
 require 'nn'
 require 'nngraph'
+local optnet = require 'optnet'
 
 require 'densecap.LanguageModel'
 require 'densecap.LocalizationLayer'
@@ -28,6 +29,7 @@ function DenseCapModel:__init(opt)
   opt.num_classes = utils.getopt(opt, 'num_classes')
   opt.std = utils.getopt(opt, 'std', 0.01) -- Used to initialize new layers
   opt.anchor_type = utils.getopt(opt, 'anchor_type', 'densecap') -- Used to define anchor type
+  opt.another_rpn = utils.getopt(opt, 'another_rpn', '') -- Use another RPN to generate proposals
 
   -- For test-time handling of final boxes
   opt.final_nms_thresh = utils.getopt(opt, 'final_nms_thresh', 0.3)
@@ -129,8 +131,26 @@ function DenseCapModel:__init(opt)
 
   self:training()
   self.finetune_cnn = false
+
+  -- Loading another RPN
+  self.another_rpn = self:_loadAnotherRPN(self.opt.another_rpn)
 end
 
+function DenseCapModel:_loadAnotherRPN(path)
+  if path == '' then
+    return nil
+  end
+  print('Loading another RPN model from ' .. path)
+  local model = torch.load(path).model
+  local rpn = nn.Sequential()
+  rpn:add(model.net:get(1))
+  rpn:add(model.net:get(2))
+  rpn:add(model.nets.localization_layer.nets.rpn)
+  rpn:evaluate()
+  local input = torch.randn(1, 3, 224, 224)
+  optnet.optimizeMemory(rpn, input, {inplace=true, mode='evaluation'})
+  return rpn
+end
 
 function DenseCapModel:_buildRecognitionNet()
   local roi_feats = nn.Identity()()
@@ -253,7 +273,14 @@ function DenseCapModel:updateOutput(input)
   -- Make sure the input is (1, 3, H, W)
   assert(input:dim() == 4 and input:size(1) == 1 and input:size(2) == 3)
   local H, W = input:size(3), input:size(4)
+
   self.nets.localization_layer:setImageSize(H, W)
+  if self.another_rpn ~= nil then
+    local rpn_out = self.another_rpn:forward(input)
+    self.nets.localization_layer:setRegionProposals(rpn_out)
+  else
+    self.nets.localization_layer:setRegionProposals(nil)
+  end
 
   if self.train then
     assert(not self._called_forward,
@@ -335,6 +362,9 @@ Returns:
 - captions: Array of length N giving output captions, decoded as strings.
 --]]
 function DenseCapModel:forward_test(input)
+  -- Avoid out of memory
+  self:clearState()
+  
   self:evaluate()
   local output = self:forward(input)
   local final_boxes = output[4] -- table of boxes of all classes
@@ -413,6 +443,7 @@ function DenseCapModel:clearState()
       v:clearState()
     end
   end
+  self.another_rpn = nil
 end
 
 --[[
@@ -429,6 +460,9 @@ Input: data is table with the following keys:
 - gt_labels: 1 x B array of ground-truth sequences for boxes
 --]]
 function DenseCapModel:forward_backward(data)
+  -- Avoid out of memory
+  self:clearState()
+
   self:training()
 
   -- Run the model forward

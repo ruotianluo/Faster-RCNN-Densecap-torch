@@ -27,6 +27,8 @@ function M.parse(arg)
     'Whether to reset the classfier, to avoid overfitting') -- Found overfitting in classfication val loss
   cmd:option('-anchor_type', 'densecap',
     '\"densecap\", \"voc\", \"coco\"')
+  cmd:option('-another_rpn', '',
+    'Path to another densecap model, we use this to generate the region proposals.')
 
   -- Loss function weights
   cmd:option('-mid_box_reg_weight', 1,
