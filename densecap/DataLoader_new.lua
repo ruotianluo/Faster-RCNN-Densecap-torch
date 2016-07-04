@@ -34,11 +34,15 @@ function DataLoader:__init(opt)
   table.insert(keys, 'img_to_first_box')
   table.insert(keys, 'img_to_last_box')
   table.insert(keys, 'labels')
-  --table.insert(keys, 'iscrowd')
+  table.insert(keys, 'iscrowd')
+  table.insert(keys, 'difficult')
   table.insert(keys, 'split')
   for k,v in pairs(keys) do
     print('reading ' .. v)
-    self[v] = self.h5_file:read('/' .. v):all()
+    local ok, tmp = pcall(function()
+      return self.h5_file:read('/' .. v):all()
+    end)
+    self[v] = tmp
   end
 
   -- open region proposals file for reading. This is useful if we, e.g.
@@ -182,6 +186,19 @@ function DataLoader:getBatch(opt)
   local box_batch = self.boxes[{ {r0,r1} }]
   box_batch = box_utils.scale_boxes_xywh(box_batch:float(), w/ow)
   box_batch = box_utils.xywh_to_xcycwh(box_batch):int()
+
+  --[[
+  if self.difficult then
+    local difficult = self.difficult[{ {r0,r1} }]
+    local sel_inds = torch.range(1, r1 - r0 + 1)[difficult:eq(0)]:long()
+    if sel_inds:numel() > 0 then
+      label_array = label_array:index(1,sel_inds)
+      box_batch = box_batch:index(1,sel_inds)
+    else
+      return self:getBatch(opt) -- if training, return next batch
+    end
+  end
+  ]]--
 
   -- batch the boxes and labels
   assert(label_array:nDimension() == 1)

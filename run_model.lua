@@ -28,10 +28,10 @@ local cmd = torch.CmdLine()
 -- Model options
 cmd:option('-checkpoint',
   'data/models/densecap/densecap-pretrained-vgg16.t7')
-cmd:option('-image_size', 720)
+cmd:option('-image_size', '^600')
 cmd:option('-rpn_nms_thresh', 0.7)
 cmd:option('-final_nms_thresh', 0.3)
-cmd:option('-num_proposals', 1000)
+cmd:option('-num_proposals', 300)
 
 -- Input settings
 cmd:option('-input_image', '',
@@ -60,6 +60,8 @@ cmd:option('-gpu', 0)
 cmd:option('-use_cudnn', 1)
 local opt = cmd:parse(arg)
 
+torch.setdefaulttensortype('torch.FloatTensor')
+
 
 function run_image(model, img_path, opt, dtype)
 
@@ -74,17 +76,24 @@ function run_image(model, img_path, opt, dtype)
   img_caffe:add(-1, vgg_mean)
 
   -- Run the model forward
-  local boxes, scores = model:forward_test(img_caffe:type(dtype))
-
-  local _, idx = torch.max(labels, 2)
-
-  local _boxes = boxes.new(boxes:size(1), 4)
-  for i = 1, boxes:size(1) do
-    _boxes[{i, idx[i], {}}]:copy(boxes[i])
+  local final_boxes, final_scores = model:forward_test(img_caffe:type(dtype))
+  local boxes = {}
+  local labels = {}
+  for cls = 2, model.opt.num_classes do
+    table.insert(boxes, final_boxes[cls - 1])
+    table.insert(labels, torch.Tensor(final_boxes[cls - 1]:size(1)):fill(cls))
   end
-  boxes = _boxes
 
-  local labels = self:decodeResult(idx)
+  local scores = torch.cat(final_scores, 1):float()
+  boxes = torch.cat(boxes, 1):float()
+  labels = torch.cat(labels, 1):float()
+
+  local Y,idx = torch.sort(scores,1,true)
+
+  scores = Y
+  boxes = boxes:index(1, idx)
+  labels = labels:index(1, idx)
+  labels = model:decodeResult(labels)
 
   local boxes_xywh = box_utils.xcycwh_to_xywh(boxes)
 

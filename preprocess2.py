@@ -91,7 +91,13 @@ def getAllAnnotations(annopath, all_data):
     tmp['id'] = img_id
     if not type(tmp['object']) is list:
       tmp['object'] = [tmp['object']]
-    data.append(tmp)
+    tmp_list = []
+    for obj in tmp['object']:
+      if int(obj['difficult']) == 0:
+        tmp_list.append(obj)
+    tmp['object'] = tmp_list
+    if len(tmp_list) > 0:
+      data.append(tmp)
   return data
 
 def encode_labels(data, cls_to_idx):
@@ -136,15 +142,14 @@ def build_img_idx_to_box_idxs(data):
   
   return img_to_first_box, img_to_last_box
 
-def build_filename_dict(data, imgpath):
+def build_filename_dict(all_data, imgpath):
   # First make sure all filenames
-  filenames_list = [img['filename'] for img in data]
-  assert len(filenames_list) == len(set(filenames_list))
+  assert len(all_data) == len(set(all_data))
   
   next_idx = 1
   filename_to_idx, idx_to_filename = {}, {}
-  for img in data:
-    filename = imgpath %(img['id'])
+  for img_id in all_data:
+    filename = imgpath %(img_id)
     filename_to_idx[filename] = next_idx
     idx_to_filename[next_idx] = filename
     next_idx += 1
@@ -204,7 +209,11 @@ def main(args):
   split_data['train'] = lines_from(args.train_split or imgsetpath %('train'))
   split_data['val'] = lines_from(args.val_split or imgsetpath %('val'))
   split_data['test'] = lines_from(args.test_split or imgsetpath %('test'))
-  all_data = split_data['train'] + split_data['val'] + split_data['test']
+
+  # get all annotations
+  data = getAllAnnotations(annopath, split_data['train'] + split_data['val'])
+
+  all_data = [img['id'] for img in data] + split_data['test']
 
   # create the output hdf5 file handle
   f = h5py.File(args.h5_output, 'w')
@@ -215,9 +224,6 @@ def main(args):
 
   # build class label mapping
   cls_to_idx, idx_to_cls = build_cls_dict() # both mappings are dicts
-  
-  # get all annotations
-  data = getAllAnnotations(annopath, split_data['train'] + split_data['val'])
   
   # encode labels
   labels_matrix, difficult = encode_labels(data, cls_to_idx)
@@ -232,7 +238,7 @@ def main(args):
   img_to_first_box, img_to_last_box = build_img_idx_to_box_idxs(data)
   f.create_dataset('img_to_first_box', data=img_to_first_box)
   f.create_dataset('img_to_last_box', data=img_to_last_box)
-  filename_to_idx, idx_to_filename = build_filename_dict(data, imgpath)
+  filename_to_idx, idx_to_filename = build_filename_dict(all_data, imgpath)
   box_to_img = encode_filenames(data, imgpath, filename_to_idx)
   f.create_dataset('box_to_img', data=box_to_img)
   f.close()

@@ -273,7 +273,7 @@ function DenseCapModel:updateOutput(input)
     -- objectness scores, and the output from the language model
     local final_boxes_float = self.output[4]:float()
     local class_scores_float = self.output[1]:float()
-    class_scores_float = nn.SoftMax():forward(class_scores_float)
+    class_scores_float = nn.SoftMax():type(class_scores_float:type()):forward(class_scores_float)
     
     local final_boxes_output = {}
     local class_scores_output = {}
