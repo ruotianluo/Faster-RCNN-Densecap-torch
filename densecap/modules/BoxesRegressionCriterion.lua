@@ -34,9 +34,8 @@ end
 
 
 function crit:clearState()
-  self.gradInput[1]:set()
-  self.gradInput[2]:set()
-  self.transform:set()
+  self.gradInput = nil
+  self.transform = nil
 end
 
 
