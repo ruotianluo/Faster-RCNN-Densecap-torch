@@ -21,6 +21,15 @@ function helper:__init(options)
   self.neg_input_idx = nil
 end
 
+function helper:setNmsThresh(nms_thresh)
+  -- Just forward to the underlying sampler
+  self.box_sampler:setNmsThresh(nms_thresh)
+end
+
+function helper:setNumProposals(num_proposals)
+  -- Just forward to the underlying sampler
+  self.box_sampler:setNumProposals(num_proposals)
+end
 
 function helper:setBounds(bounds)
   -- Just forward to the underlying sampler
@@ -70,12 +79,13 @@ function helper:updateOutput(input)
   local input_data = input[1]
   local target_data = input[2]
   local input_boxes = input_data[1]
+  local input_scores = input_data[4]
   local target_boxes = target_data[1]
   local N = input_boxes:size(1)
   assert(N == 1, 'Only minibatches of 1 are supported')
 
   -- Run the sampler to get the indices of the positive and negative boxes
-  local idxs = self.box_sampler:forward{input_boxes, target_boxes}
+  local idxs = self.box_sampler:forward{input_boxes, input_scores, target_boxes}
   self.pos_input_idx = idxs[1]
   self.pos_target_idx = idxs[2]
   self.neg_input_idx = idxs[3]

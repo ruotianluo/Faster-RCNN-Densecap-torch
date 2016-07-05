@@ -11,6 +11,8 @@ function M.setup(opt)
     model.opt.objectness_weight = opt.objectness_weight
     model.nets.localization_layer.opt.mid_objectness_weight = opt.mid_objectness_weight
     model.nets.localization_layer.opt.mid_box_reg_weight = opt.mid_box_reg_weight
+    model.nets.localization_layer.nets.box_sampler_helper:setNumProposals(opt.sampler_num_proposals)
+    model.nets.localization_layer.nets.box_sampler_helper:setNmsThresh(opt.sampler_nms_thresh)
     model.crits.box_reg_crit.w = opt.end_box_reg_weight
     model.opt.classification_weight = opt.classification_weight
     local rpn = model.nets.localization_layer.nets.rpn

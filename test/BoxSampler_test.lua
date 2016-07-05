@@ -21,6 +21,8 @@ function tests.simpleTest()
   local N, B1, B2 = 1, 10, 3
   local batch_size = 4
   local low_thresh, high_thresh = 0.2, 0.4
+  local nms_thresh = 1
+  local num_proposals = 10
 
   local input_boxes = torch.Tensor(N, B1, 4)
   local target_boxes = torch.Tensor(N, B2, 4)
@@ -35,6 +37,8 @@ function tests.simpleTest()
   input_boxes[{1, 8}]  = torch.Tensor{4.5, 2, 3, 7}
   input_boxes[{1, 9}]  = torch.Tensor{6.5, 5, 6, 3}
   input_boxes[{1, 10}] = torch.Tensor{4, 5, 3, 5}
+  
+  local input_scores = torch.Tensor(N, B1, 2):fill(1)
 
   target_boxes[{1, 1}] = torch.Tensor{-6.5, 1.5, 3, 7}
   target_boxes[{1, 2}] = torch.Tensor{4.5, 4.5, 3, 5}
@@ -44,10 +48,12 @@ function tests.simpleTest()
                 batch_size=batch_size,
                 low_thresh=low_thresh,
                 high_thresh=high_thresh,
+                nms_thresh=nms_thresh,
+                num_proposals=num_proposals,
               }
   mod.debug_pos_sample_idx = torch.LongTensor{2, 3}
   mod.debug_neg_sample_idx = torch.LongTensor{1, 4}
-  local output = mod:forward{input_boxes, target_boxes}
+  local output = mod:forward{input_boxes, input_scores, target_boxes}
   local pos_input_idx = output[1]
   local pos_target_idx = output[2]
   local neg_input_idx = output[3]
@@ -88,11 +94,13 @@ function tests.anotherTest()
   input_boxes[{1, 3}]  = torch.Tensor{3.5, 1, 3, 4}
   input_boxes[{1, 4}]  = torch.Tensor{8, 8, 2, 2}
   
+  local input_scores = torch.Tensor(N, B1, 2):fill(1)
+  
   target_boxes[{1, 1}] = torch.Tensor{4.5, 4, 3, 4}
   
   local mod = nn.BoxSampler{batch_size=batch_size}
   
-  local output = mod:forward{input_boxes, target_boxes}
+  local output = mod:forward{input_boxes, input_scores, target_boxes}
   local pos_input_idx = output[1]
   local pos_target_idx = output[2]
   local neg_input_idx = output[3]
@@ -128,6 +136,8 @@ function tests.boundsTest()
   local N, B1, B2 = 1, 10, 3
   local batch_size = 4
   local low_thresh, high_thresh = 0.2, 0.4
+  local nms_thresh = 1
+  local num_proposals = 10
 
   local input_boxes = torch.Tensor(N, B1, 4)
   local target_boxes = torch.Tensor(N, B2, 4)
@@ -142,6 +152,8 @@ function tests.boundsTest()
   input_boxes[{1, 8}]  = torch.Tensor{4.5, 2, 3, 7}
   input_boxes[{1, 9}]  = torch.Tensor{6.5, 5, 6, 3}
   input_boxes[{1, 10}] = torch.Tensor{4, 5, 3, 5}
+  
+  local input_scores = torch.Tensor(N, B1, 2):fill(1)
 
   target_boxes[{1, 1}] = torch.Tensor{-6.5, 1.5, 3, 7}
   target_boxes[{1, 2}] = torch.Tensor{4.5, 4.5, 3, 5}
@@ -151,11 +163,13 @@ function tests.boundsTest()
                 batch_size=batch_size,
                 low_thresh=low_thresh,
                 high_thresh=high_thresh,
+                nms_thresh=nms_thresh,
+                num_proposals=num_proposals,
               }
   mod:setBounds{x_min=-1, x_max=9, y_min=-9, y_max=8}
-  mod.debug_pos_sample_idx = torch.LongTensor{2, 3}
-  mod.debug_neg_sample_idx = torch.LongTensor{1, 2}
-  local output = mod:forward{input_boxes, target_boxes}
+  --mod.debug_pos_sample_idx = torch.LongTensor{2, 3}
+  --mod.debug_neg_sample_idx = torch.LongTensor{1, 2}
+  local output = mod:forward{input_boxes, input_scores, target_boxes}
   local pos_input_idx = output[1]
   local pos_target_idx = output[2]
   local neg_input_idx = output[3]
@@ -179,11 +193,12 @@ function tests.negativeReplacementTest()
   local batch_size = 64
 
   local input_boxes = torch.randn(N, B1, 4)
+  local input_scores = torch.Tensor(N, B1, 2):fill(1)
   local target_boxes = torch.randn(N, B2, 4)
 
   local mod = nn.BoxSampler{batch_size=batch_size}
 
-  local output = mod:forward{input_boxes, target_boxes}
+  local output = mod:forward{input_boxes, input_scores, target_boxes}
 
   local pos_input_idx, pos_target_idx, neg_input_idx = unpack(output)
   tester:asserteq(pos_input_idx:size(1), pos_target_idx:size(1))
@@ -197,6 +212,8 @@ end
 function tests.noNegativesTest()
   local N, B1, B2 = 1, 4, 2
   local low_thresh, high_thresh = 0.25, 0.3
+  local nms_thresh = 1
+  local num_proposals = 4
   
   local input_boxes = torch.Tensor(N, B1, 4)
   local target_boxes = torch.Tensor(N, B2, 4)
@@ -205,6 +222,8 @@ function tests.noNegativesTest()
   input_boxes[{1, 2}] = torch.Tensor{7, 6.5, 4, 3}
   input_boxes[{1, 3}] = torch.Tensor{8, 1.5, 2, 3}
   input_boxes[{1, 4}] = torch.Tensor{10, 2.5, 2, 3}
+  
+  local input_scores = torch.Tensor(N, B1, 2):fill(1)
 
   target_boxes[{1, 1}] = torch.Tensor{6, 5.5, 4, 3}
   target_boxes[{1, 2}] = torch.Tensor{9, 1.5, 2, 3}
@@ -213,6 +232,8 @@ function tests.noNegativesTest()
                 batch_size=batch_size,
                 low_thresh=low_thresh,
                 high_thresh=high_thresh,
+                nms_thresh=nms_thresh,
+                num_proposals=num_proposals,
               }
   mod:setBounds{x_min=0, x_max=10, y_min=0, y_max=10}
 
@@ -227,7 +248,7 @@ function tests.noNegativesTest()
   local k = 'BoxSampler no negatives'
   local old_counter_value = utils.__GLOBAL_STATS__[k] or 0
 
-  mod:forward{input_boxes, target_boxes}
+  mod:forward{input_boxes, input_scores, target_boxes}
 
   tester:asserteq(utils.__GLOBAL_STATS__[k], old_counter_value + 1)
 

@@ -23,6 +23,11 @@ function M.parse(arg)
     'Boxes with IoU less than this with all GT boxes are considered negatives')
   cmd:option('-train_remove_outbounds_boxes', 1,
     'Whether to ignore out-of-bounds boxes for sampling at training time')
+  cmd:option('-sampler_nms_thresh', 1,
+    'Number of top scoring boxes to keep before apply NMS to RPN proposals') -- TRAIN.RPN_NMS_THRESH
+  cmd:option('-sampler_num_proposals', 2000,
+    'Number of region proposal to use at training time') -- TRAIN.RPN_POST_NMS_TOP_N in py-faster-rcnn
+
   cmd:option('-reset_classifier', 0,
     'Whether to reset the classfier, to avoid overfitting') -- Found overfitting in classfication val loss
   cmd:option('-anchor_type', 'densecap',

@@ -82,6 +82,8 @@ function layer:__init(opt)
   opt.sampler_high_thresh = utils.getopt(opt, 'sampler_high_thresh', 0.7)
   opt.sampler_low_thresh = utils.getopt(opt, 'sampler_low_thresh', 0.5)
   opt.train_remove_outbounds_boxes = utils.getopt(opt, 'train_remove_outbounds_boxes', 1)
+  opt.sampler_nms_thresh = utils.getopt(opt, 'sampler_nms_thresh', 0.7)
+  opt.sampler_num_proposals = utils.getopt(opt, 'sampler_num_proposals', 2000)
 
   utils.ensureopt(opt, 'mid_box_reg_weight')
   utils.ensureopt(opt, 'mid_objectness_weight')
@@ -101,6 +103,8 @@ function layer:__init(opt)
                                     batch_size=opt.sampler_batch_size,
                                     low_thresh=opt.sampler_low_thresh,
                                     high_thresh=opt.sampler_high_thresh,
+                                    nms_thresh=opt.sampler_nms_thresh,
+                                    num_proposals=opt.sampler_num_proposals,
                                  }
 
   -- Interpolates conv features for each RoI
