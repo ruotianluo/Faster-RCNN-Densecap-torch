@@ -135,6 +135,7 @@ end
 function DenseCapModel:_buildRecognitionNet()
   local roi_feats = nn.Identity()()
   local roi_boxes = nn.Identity()()
+  local roi_scores = nn.Identity()()
   local gt_boxes = nn.Identity()()
   local gt_labels = nn.Identity()()
 
@@ -160,11 +161,12 @@ function DenseCapModel:_buildRecognitionNet()
   pos_roi_boxes:annotate{name='box_slicer'}
   final_box_trans:annotate{name='box_reg_branch'}
 
-  local inputs = {roi_feats, roi_boxes, gt_boxes, gt_labels}
+  local inputs = {roi_feats, roi_boxes, roi_scores, gt_boxes, gt_labels}
   local outputs = {
     classifier_output,
     pos_roi_boxes, final_box_trans, final_boxes,
     gt_boxes, gt_labels,
+    roi_boxes, roi_scores,
   }
   local mod = nn.gModule(inputs, outputs)
   mod.name = 'recognition_network'
@@ -275,8 +277,11 @@ function DenseCapModel:updateOutput(input)
     local class_scores_float = self.output[1]:float()
     class_scores_float = nn.SoftMax():type(class_scores_float:type()):forward(class_scores_float)
     
-    local final_boxes_output = {}
-    local class_scores_output = {}
+    local rpn_boxes_float = self.output[7]:float()
+    local rpn_scores_float = self.output[8]:float()
+
+    local final_boxes_output = {rpn_boxes_float}
+    local class_scores_output = {rpn_scores_float}
     
     for cls = 2, self.opt.num_classes do 
       local boxes_scores = torch.FloatTensor(final_boxes_float:size(1), 5)
@@ -483,6 +488,8 @@ function DenseCapModel:forward_backward(data)
   grad_out[4] = out[4].new(#out[4]):zero()
   grad_out[5] = gt_boxes.new(#gt_boxes):zero()
   grad_out[6] = gt_labels.new(#gt_labels):zero()
+  grad_out[7] = out[7].new(#out[7]):zero()
+  grad_out[8] = out[8].new(#out[8]):zero()
 
   self:backward(input, grad_out)
 

@@ -33,6 +33,7 @@ Returns: List of:
 - roi_boxes: (pos + neg) x 4 array of RoI box coordinates (xc, yc, w, h);
   roi_boxes[{{1, pos}}] gives the coordinates for the positive boxes
   and the rest are negatives.
+- roi_scores: (pos + neg) vector of  objectness score for all the boxes
 - gt_boxes_sample: pos x 4 array of ground-truth region boxes corresponding to
   sampled positives. This will be an empty Tensor at test-time.
 - gt_labels_sample: pos x L array of ground-truth labels corresponding to sampled
@@ -133,6 +134,7 @@ function layer:__init(opt)
   self.neg_data = nil
   self.neg_scores = nil
   self.roi_boxes = torch.Tensor()
+  self.roi_scores = torch.Tensor()
 
   -- Used as targets for pos / neg objectness crits
   self.pos_labels = torch.Tensor()
@@ -335,7 +337,8 @@ function layer:_forward_test(input)
   local rpn_boxes_nms = rpn_boxes:index(2, idx)[1]
   local rpn_anchors_nms = rpn_anchors:index(2, idx)[1]
   local rpn_trans_nms = rpn_trans:index(2, idx)[1]
-  local rpn_scores_nms = rpn_scores:index(2, idx)[1]
+  -- local rpn_scores_nms = rpn_scores:index(2, idx)[1]
+  local rpn_scores_nms = scores:index(1, idx)
   local scores_nms = scores:index(1, idx)
 
   if verbose then
@@ -358,7 +361,7 @@ function layer:_forward_test(input)
   end
   
   local empty = roi_features.new()
-  self.output = {roi_features, rpn_boxes_nms, empty, empty}
+  self.output = {roi_features, rpn_boxes_nms, rpn_scores_nms, empty, empty}
   return self.output
   -- return roi_features, rpn_boxes_nms, scores_nms
 end
@@ -446,6 +449,14 @@ function layer:_forward_train(input)
   self.roi_boxes[{{1, num_pos}}]:copy(self.pos_boxes)
   self.roi_boxes[{{num_pos + 1, num_pos + num_neg}}]:copy(self.neg_boxes)
 
+  ---- Concatentate pos_scores and neg_scores into roi_scores, and turn to probability
+  self.roi_scores:resize(num_pos + num_neg)
+  local tmp_scores = torch.cat({self.pos_scores, self.neg_scores}, 1):clone()
+  local tmp_scores_exp = torch.exp(tmp_scores)
+  local tmp_pos_exp = tmp_scores_exp[{{}, 1}]
+  local tmp_neg_exp = tmp_scores_exp[{{}, 2}]
+  self.roi_scores:copy((tmp_pos_exp + tmp_neg_exp):pow(-1):cmul(tmp_pos_exp))
+
   -- Run the RoI pooling forward for positive boxes
   self:timeit('roi_pooling:forward', function()
     self.nets.roi_pooling:setImageSize(self.image_height, self.image_width)
@@ -522,7 +533,7 @@ function layer:_forward_train(input)
     self.stats.vars = vars
   end
 
-  self.output = {self.roi_features, self.roi_boxes, self.pos_target_boxes, self.pos_target_labels}
+  self.output = {self.roi_features, self.roi_boxes, self.roi_scores, self.pos_target_boxes, self.pos_target_labels}
   return self.output
 end
 

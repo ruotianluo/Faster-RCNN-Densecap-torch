@@ -80,9 +80,11 @@ function run_image(model, img_path, opt, dtype)
   local boxes = {}
   local labels = {}
   for cls = 2, model.opt.num_classes do
-    table.insert(boxes, final_boxes[cls - 1])
-    table.insert(labels, torch.Tensor(final_boxes[cls - 1]:size(1)):fill(cls))
+    table.insert(boxes, final_boxes[cls])
+    table.insert(labels, torch.Tensor(final_boxes[cls]:size(1)):fill(cls))
   end
+
+  table.remove(final_scores, 1) -- Remove the RPN score
 
   local scores = torch.cat(final_scores, 1):float()
   boxes = torch.cat(boxes, 1):float()

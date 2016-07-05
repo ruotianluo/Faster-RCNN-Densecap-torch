@@ -34,7 +34,7 @@ function eval_utils.eval_split(kwargs)
   model:evaluate()
   loader:resetIterator(split)
   local evaluator = {}
-  for cls = 2, model.opt.num_classes do -- Without background
+  for cls = 1, model.opt.num_classes do -- 1 is not background, is the output of RPN
     evaluator[cls] = DenseCaptioningEvaluator{id=id}
   end
 
@@ -63,13 +63,16 @@ function eval_utils.eval_split(kwargs)
 
     -- Call forward_test to make predictions, and pass them to evaluator
     local boxes, scores = model:forward_test(data.image)
+    -- 1 is the RPN output
+    evaluator[1]:addResult(scores[1], boxes[1], 
+          gt_boxes[1], 'RPN')
     for cls = 2, model.opt.num_classes do
       local sel_inds = torch.range(1,gt_labels[1]:size(1))[gt_labels[1]:eq(cls)]:long()
       local cls_gt_boxes
       if sel_inds:numel() ~= 0 then
         cls_gt_boxes = gt_boxes[1]:index(1, sel_inds)
       end
-      evaluator[cls]:addResult(scores[cls-1], boxes[cls-1], -- table index start from 1
+      evaluator[cls]:addResult(scores[cls], boxes[cls], -- table index start from 1
           cls_gt_boxes, model.opt.idx_to_cls[cls])
     end
     
@@ -91,15 +94,17 @@ function eval_utils.eval_split(kwargs)
   print('Average loss: ', loss_results.total_loss)
   
   local ap_results = {}
-  for cls = 2, model.opt.num_classes do
+  for cls = 1, model.opt.num_classes do
     ap_results[cls] = evaluator[cls]:evaluate()
   end
+  ap_results.rpn_ap = ap_results[1]['ov0.5'] -- RPN ap
   ap_results.map = {}
-  for k,v in pairs(ap_results) do
-    table.insert(ap_results.map, v['ov0.5'])
+  for cls = 2, model.opt.num_classes do
+    table.insert(ap_results.map, ap_results[cls]['ov0.5'])
   end
   ap_results.map = utils.average_values(ap_results.map)
 
+  print(string.format('rpn AP: %f', 100 * ap_results.rpn_ap))
   print(string.format('mAP: %f', 100 * ap_results.map))
   
   local out = {
