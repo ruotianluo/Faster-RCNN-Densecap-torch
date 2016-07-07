@@ -8,7 +8,6 @@ function M.setup(opt)
   else
     print('initializing a DenseCap model from ' .. opt.checkpoint_start_from)
     model = torch.load(opt.checkpoint_start_from).model
-    model.opt.objectness_weight = opt.objectness_weight
     model.nets.localization_layer.opt.mid_objectness_weight = opt.mid_objectness_weight
     model.nets.localization_layer.opt.mid_box_reg_weight = opt.mid_box_reg_weight
     model.nets.localization_layer.nets.box_sampler_helper:setNumProposals(opt.sampler_num_proposals)
@@ -17,8 +16,8 @@ function M.setup(opt)
     model.opt.classification_weight = opt.classification_weight
     local rpn = model.nets.localization_layer.nets.rpn
     rpn:findModules('nn.RegularizeLayer')[1].w = opt.box_reg_decay
-    model.opt.sampler_high_thresh = opt.iou_high_thresh
-    model.opt.sampler_low_thresh = opt.iou_low_thresh
+    -- model.opt.sampler_high_thresh = opt.iou_high_thresh
+    -- model.opt.sampler_low_thresh = opt.iou_low_thresh
     model.opt.train_remove_outbounds_boxes = opt.train_remove_outbounds_boxes
 
     if opt.reset_classifier == 1 then -- Reset to avoid overfitting

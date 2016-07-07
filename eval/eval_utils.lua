@@ -94,8 +94,9 @@ function eval_utils.eval_split(kwargs)
   print('Average loss: ', loss_results.total_loss)
   
   local ap_results = {}
+  local pr_curves = {}
   for cls = 1, model.opt.num_classes do
-    ap_results[cls] = evaluator[cls]:evaluate()
+    ap_results[cls], pr_curves[cls] = unpack(evaluator[cls]:evaluate())
   end
   ap_results.rpn_ap = ap_results[1]['ov0.5'] -- RPN ap
   ap_results.map = {}
@@ -110,6 +111,7 @@ function eval_utils.eval_split(kwargs)
   local out = {
     loss_results=loss_results,
     ap_results=ap_results,
+    pr_curves = pr_curves,
   }
   return out
 end
@@ -285,6 +287,7 @@ function DenseCaptioningEvaluator:evaluate(verbose)
   local y,ix = torch.sort(scores,1,true) -- true makes order descending
 
   local ap_results = {}
+  local pr_curves = {}
   for foo, min_overlap in pairs(min_overlaps) do
     -- go down the list and build tp,fp arrays
     local n = y:nElement()
@@ -317,10 +320,12 @@ function DenseCaptioningEvaluator:evaluate(verbose)
     -- compute max-interpolated average precision
     local ap = 0
     local apn = 0
+    pr_curves['ov' .. min_overlap] = {}
     for t=0,1,0.01 do
       local mask = torch.ge(rec, t):double()
       local prec_masked = torch.cmul(prec:double(), mask)
       local p = torch.max(prec_masked)
+      table.insert(pr_curves['ov' .. min_overlap], p)
       ap = ap + p
       apn = apn + 1
     end
@@ -334,7 +339,7 @@ function DenseCaptioningEvaluator:evaluate(verbose)
   --local detmap = utils.average_values(det_results)
 
   -- lets get out of here
-  local results = ap_results
+  local results = {ap_results, pr_curves}
   return results
 end
 

@@ -9,6 +9,7 @@ from math import floor
 import h5py
 import numpy as np
 from scipy.misc import imread, imresize
+import os
 
 import xmltodict
 
@@ -84,11 +85,12 @@ def getAnnotations(annopath, img_id):
   anno = xmltodict.parse(open(annopath %(img_id)))
   return anno['annotation']
 
-def getAllAnnotations(annopath, all_data):
+def getAllAnnotations(annopath, imgpath, all_data):
   data = []
   for img_id in all_data:
     tmp = getAnnotations(annopath, img_id)
     tmp['id'] = img_id
+    tmp['filename'] = imgpath %(img_id)
     if not type(tmp['object']) is list:
       tmp['object'] = [tmp['object']]
     tmp_list = []
@@ -96,8 +98,10 @@ def getAllAnnotations(annopath, all_data):
       if int(obj['difficult']) == 0:
         tmp_list.append(obj)
     tmp['object'] = tmp_list
-    if len(tmp_list) > 0:
+    if len(tmp_list) > 0 and os.path.isfile(tmp['filename']):
       data.append(tmp)
+    else:
+      print 'no objects or no corresponding image'
   return data
 
 def encode_labels(data, cls_to_idx):
@@ -211,7 +215,7 @@ def main(args):
   split_data['test'] = lines_from(args.test_split or imgsetpath %('test'))
 
   # get all annotations
-  data = getAllAnnotations(annopath, split_data['train'] + split_data['val'])
+  data = getAllAnnotations(annopath, imgpath, split_data['train'] + split_data['val'])
 
   all_data = [img['id'] for img in data] + split_data['test']
 
