@@ -190,3 +190,15 @@ function helper:updateGradInput(input, gradOutput)
 
   return self.gradInput
 end
+
+function helper:clearState()
+  self.output[1] = {}
+  self.output[2] = {}
+  self.output[3] = {}
+  self.gradInput = {}
+
+  self.num_pos, self.num_neg = nil, nil
+  self.pos_input_idx = nil
+  self.pos_target_idx = nil
+  self.neg_input_idx = nil
+end

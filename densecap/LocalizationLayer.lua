@@ -6,6 +6,7 @@ require 'densecap.modules.BilinearRoiPooling'
 require 'densecap.modules.ReshapeBoxFeatures'
 require 'densecap.modules.ApplyBoxTransform'
 require 'densecap.modules.InvertBoxTransform'
+require 'densecap.modules.AnchorTarget'
 require 'densecap.modules.BoxSamplerHelper'
 require 'densecap.modules.RegularizeLayer'
 require 'densecap.modules.MakeAnchors'
@@ -78,9 +79,10 @@ function layer:__init(opt)
   opt.anchor_scale = utils.getopt(opt, 'anchor_scale', 1.0)
   opt.anchor_type = utils.getopt(opt, 'anchor_type', 'densecap')
 
-  opt.sampler_batch_size = utils.getopt(opt, 'sampler_batch_size', 256)
-  opt.sampler_high_thresh = utils.getopt(opt, 'sampler_high_thresh', 0.7)
-  opt.sampler_low_thresh = utils.getopt(opt, 'sampler_low_thresh', 0.5)
+  opt.sampler_batch_size = utils.getopt(opt, 'sampler_batch_size', 128)
+  opt.rpn_batch_size = utils.getopt(opt, 'rpn_batch_size', 256)
+  opt.rpn_high_thresh = utils.getopt(opt, 'rpn_high_thresh', 0.7)
+  opt.rpn_low_thresh = utils.getopt(opt, 'rpn_low_thresh', 0.5)
   opt.train_remove_outbounds_boxes = utils.getopt(opt, 'train_remove_outbounds_boxes', 1)
   opt.sampler_nms_thresh = utils.getopt(opt, 'sampler_nms_thresh', 0.7)
   opt.sampler_num_proposals = utils.getopt(opt, 'sampler_num_proposals', 2000)
@@ -101,11 +103,16 @@ function layer:__init(opt)
   -- Performs positive / negative sampling of region proposals
   self.nets.box_sampler_helper = nn.BoxSamplerHelper{
                                     batch_size=opt.sampler_batch_size,
-                                    low_thresh=opt.sampler_low_thresh,
-                                    high_thresh=opt.sampler_high_thresh,
                                     nms_thresh=opt.sampler_nms_thresh,
                                     num_proposals=opt.sampler_num_proposals,
                                  }
+
+  -- Generate positive and negative anchors
+  self.nets.anchor_target = nn.AnchorTarget{
+                              batch_size=opt.rpn_batch_size,
+                              low_thresh=opt.rpn_low_thresh,
+                              high_thresh=opt.rpn_high_thresh,
+                            }
 
   -- Interpolates conv features for each RoI
   self.nets.roi_pooling = nn.BilinearRoiPooling(opt.output_height, opt.output_width)
@@ -128,11 +135,10 @@ function layer:__init(opt)
   self.rpn_scores = nil
 
   -- Outputs of sampler
-  self.pos_data = nil
+  self.pos_boxes_data = nil
   self.pos_boxes = nil
-  self.pos_anchors = nil
-  self.pos_trans = nil
-  self.pos_target_data = nil
+  self.pos_boxes_trans = nil
+  self.pos_boxes_target_data = nil
   self.pos_target_boxes = nil
   self.pos_target_labels = nil
   self.neg_data = nil
@@ -140,12 +146,22 @@ function layer:__init(opt)
   self.roi_boxes = torch.Tensor()
   self.roi_scores = torch.Tensor()
 
+  -- Outputs of anchor target
+
+  self.pos_anchors = nil
+  self.pos_anchors_data = nil
+  self.pos_anchors_trans = nil
+  self.pos_anchors_target_data = nil
+  self.pos_anchors_target_boxes = nil
+  self.neg_anchors_data = nil
+  self.neg_anchors_scores = nil
+
   -- Used as targets for pos / neg objectness crits
-  self.pos_labels = torch.Tensor()
-  self.neg_labels = torch.Tensor()
+  self.pos_anchors_labels = torch.Tensor()
+  self.neg_anchors_labels = torch.Tensor()
 
   -- Used as targets for bounding box regression
-  self.pos_trans_targets = torch.Tensor()
+  self.pos_anchors_trans_targets = torch.Tensor()
 
   -- Used to track image size; must call setImageSize before each forward pass
   self.image_width = nil
@@ -208,17 +224,31 @@ function layer:clearState()
   self.rpn_anchors = nil
   self.rpn_trans = nil
   self.rpn_scores = nil
-  self.pos_data = nil
+  self.pos_boxes_data = nil
   self.pos_boxes = nil
-  self.pos_anchors = nil
-  self.pos_trans = nil
-  self.pos_target_data = nil
+  self.pos_boxes_trans = nil
+  self.pos_boxes_target_data = nil
   self.pos_target_boxes = nil
   self.pos_target_labels = nil
   self.neg_data = nil
   self.neg_scores = nil
+
+  self.pos_anchors = nil
+  self.pos_anchors_data = nil
+  self.pos_anchors_trans = nil
+  self.pos_anchors_target_data = nil
+  self.pos_anchors_target_boxes = nil
+  self.neg_anchors_data = nil
+  self.neg_anchors_scores = nil
+
+  self.pos_anchors_labels:set()
+  self.neg_anchors_labels:set()
+  self.pos_anchors_trans_targets:set()
+
   self.roi_boxes:set()
   self.nets.rpn:clearState()
+  self.nets.box_sampler_helper:clearState()
+  self.nets.anchor_target:clearState()
   self.nets.roi_pooling:clearState()
 end
 
@@ -427,7 +457,26 @@ function layer:_forward_train(input)
       y_max=self.image_height
     }
     self.nets.box_sampler_helper:setBounds(bounds)
+    self.nets.anchor_target:setBounds(bounds)
   end
+
+  -- Run anchor target
+  self:timeit('anchor target:forward', function()
+    local anchor_out = self.nets.anchor_target:forward{
+                          self.rpn_out, {gt_boxes, gt_labels}}
+   
+    -- Unpack pos data
+    self.pos_anchors_data, self.pos_anchors_target_data, self.neg_anchors_data = unpack(anchor_out)
+    self.pos_anchors = self.pos_anchors_data[2]
+    self.pos_anchors_trans, self.pos_anchors_scores = self.pos_anchors_data[3], self.pos_anchors_data[4]
+    
+    -- Unpack target data
+    self.pos_anchors_target_boxes = self.pos_anchors_target_data[1]
+    
+    -- Unpack neg data (only scores matter)
+    self.neg_anchors = self.neg_anchors_data[2]
+    self.neg_anchors_scores = self.neg_anchors_data[4]
+  end)
 
   -- Run the sampler forward
   self:timeit('sampler:forward', function()
@@ -435,27 +484,28 @@ function layer:_forward_train(input)
                           self.rpn_out, {gt_boxes, gt_labels}}
    
     -- Unpack pos data
-    self.pos_data, self.pos_target_data, self.neg_data = unpack(sampler_out)
-    self.pos_boxes, self.pos_anchors = self.pos_data[1], self.pos_data[2]
-    self.pos_trans, self.pos_scores = self.pos_data[3], self.pos_data[4]
+    self.pos_boxes_data, self.pos_boxes_target_data, self.neg_data = unpack(sampler_out)
+    self.pos_boxes = self.pos_boxes_data[1]
+    self.pos_boxes_trans, self.pos_boxes_scores = self.pos_boxes_data[3], self.pos_boxes_data[4]
     
     -- Unpack target data
-    self.pos_target_boxes, self.pos_target_labels = unpack(self.pos_target_data)
+    self.pos_target_boxes, self.pos_target_labels = unpack(self.pos_boxes_target_data)
     
     -- Unpack neg data (only scores matter)
     self.neg_boxes = self.neg_data[1]
     self.neg_scores = self.neg_data[4]
   end)
-  local num_pos, num_neg = self.pos_boxes:size(1), self.neg_scores:size(1)
+  local num_anchors_pos, num_anchors_neg = self.pos_anchors:size(1), self.neg_anchors:size(1)
+  local num_boxes_pos, num_boxes_neg = self.pos_boxes:size(1), self.neg_scores:size(1) -- without anchors, this is for sampled region proposals
   
   -- Concatentate pos_boxes and neg_boxes into roi_boxes
-  self.roi_boxes:resize(num_pos + num_neg, 4)
-  self.roi_boxes[{{1, num_pos}}]:copy(self.pos_boxes)
-  self.roi_boxes[{{num_pos + 1, num_pos + num_neg}}]:copy(self.neg_boxes)
+  self.roi_boxes:resize(num_boxes_pos + num_boxes_neg, 4)
+  self.roi_boxes[{{1, num_boxes_pos}}]:copy(self.pos_boxes)
+  self.roi_boxes[{{num_boxes_pos + 1, num_boxes_pos + num_boxes_neg}}]:copy(self.neg_boxes)
 
   ---- Concatentate pos_scores and neg_scores into roi_scores, and turn to probability
-  self.roi_scores:resize(num_pos + num_neg)
-  local tmp_scores = torch.cat({self.pos_scores, self.neg_scores}, 1):clone()
+  self.roi_scores:resize(num_boxes_pos + num_boxes_neg)
+  local tmp_scores = torch.cat({self.pos_boxes_scores, self.neg_scores}, 1):clone()
   local tmp_scores_exp = torch.exp(tmp_scores)
   local tmp_pos_exp = tmp_scores_exp[{{}, 1}]
   local tmp_neg_exp = tmp_scores_exp[{{}, 2}]
@@ -469,18 +519,18 @@ function layer:_forward_train(input)
 
   -- Compute objectness loss
   self:timeit('objectness_loss:forward', function()
-    if self.pos_scores:type() ~= 'torch.CudaTensor' then
+    if self.pos_anchors_scores:type() ~= 'torch.CudaTensor' then
        -- ClassNLLCriterion expects LongTensor labels for CPU score types,
        -- but CudaTensor labels for GPU score types. self.pos_labels and
        -- self.neg_labels will be casted by any call to self:type(), so
        -- we need to cast them back to LongTensor for CPU tensor types.
-       self.pos_labels = self.pos_labels:long()
-       self.neg_labels = self.neg_labels:long()
+       self.pos_anchors_labels = self.pos_anchors_labels:long()
+       self.neg_anchors_labels = self.neg_anchors_labels:long()
     end
-    self.pos_labels:resize(num_pos):fill(1)
-    self.neg_labels:resize(num_neg):fill(2)
-    local obj_loss_pos = self.nets.obj_crit_pos:forward(self.pos_scores, self.pos_labels)
-    local obj_loss_neg = self.nets.obj_crit_neg:forward(self.neg_scores, self.neg_labels)
+    self.pos_anchors_labels:resize(num_anchors_pos):fill(1)
+    self.neg_anchors_labels:resize(num_anchors_neg):fill(2)
+    local obj_loss_pos = self.nets.obj_crit_pos:forward(self.pos_anchors_scores, self.pos_anchors_labels)
+    local obj_loss_neg = self.nets.obj_crit_neg:forward(self.neg_anchors_scores, self.neg_anchors_labels)
     local obj_weight = self.opt.mid_objectness_weight
     self.stats.losses.obj_loss_pos = obj_weight * obj_loss_pos
     self.stats.losses.obj_loss_neg = obj_weight * obj_loss_neg
@@ -488,27 +538,27 @@ function layer:_forward_train(input)
       
   -- Compute targets for RPN bounding box regression
   self:timeit('invert_box_transform:forward', function()
-    self.pos_trans_targets = self.nets.invert_box_transform:forward{
-                                self.pos_anchors, self.pos_target_boxes}
+    self.pos_anchors_trans_targets = self.nets.invert_box_transform:forward{
+                                self.pos_anchors, self.pos_anchors_target_boxes}
   end)
 
   -- DIRTY DIRTY HACK: To prevent the loss from blowing up, replace boxes
   -- with huge pos_trans_targets with ground-truth
-  local max_trans = torch.abs(self.pos_trans_targets):max(2)
-  local max_trans_mask = torch.gt(max_trans, 10):expandAs(self.pos_trans_targets)
+  local max_trans = torch.abs(self.pos_anchors_trans_targets):max(2)
+  local max_trans_mask = torch.gt(max_trans, 10):expandAs(self.pos_anchors_trans_targets)
   local mask_sum = max_trans_mask:sum() / 4
   if mask_sum > 0 then
     local msg = 'WARNING: Masking out %d boxes in LocalizationLayer'
     print(string.format(msg, mask_sum))
-    self.pos_trans[max_trans_mask] = 0
-    self.pos_trans_targets[max_trans_mask] = 0
+    self.pos_anchors_trans[max_trans_mask] = 0
+    self.pos_anchors_trans_targets[max_trans_mask] = 0
   end
 
   -- Compute RPN box regression loss
   self:timeit('box_reg_loss:forward', function()
     local crit = self.nets.box_reg_crit
     local weight = self.opt.mid_box_reg_weight
-    local loss = weight * crit:forward(self.pos_trans, self.pos_trans_targets)
+    local loss = weight * crit:forward(self.pos_anchors_trans, self.pos_anchors_trans_targets)
     self.stats.losses.box_reg_loss = loss
   end)
   
@@ -530,7 +580,7 @@ function layer:_forward_train(input)
     vars.pred_boxes = self.rpn_boxes[1]
     vars.pred_anchors = self.rpn_anchors[1]
     vars.aligned_pos_boxes = self.pos_boxes
-    vars.aligned_pos_scores = self.pos_scores
+    vars.aligned_pos_scores = self.pos_boxes_scores
     vars.aligned_target_boxes = self.pos_target_boxes
     vars.sampled_neg_boxes = self.neg_boxes
     vars.sampled_neg_scores = self.neg_scores
@@ -558,33 +608,33 @@ function layer:updateGradInput(input, gradOutput)
   local grad_roi_features = gradOutput[1]
   local grad_roi_boxes = gradOutput[2]:clone()
   
-  local num_pos, num_neg = self.pos_boxes:size(1), self.neg_scores:size(1)
-  local grad_pos_boxes = grad_roi_boxes[{{1, num_pos}}]
-  local grad_neg_boxes = grad_roi_boxes[{{num_pos + 1, num_pos + num_neg}}]
+  local num_boxes_pos, num_boxes_neg = self.pos_boxes:size(1), self.neg_scores:size(1)
+  local grad_pos_boxes = grad_roi_boxes[{{1, num_boxes_pos}}]
+  local grad_neg_boxes = grad_roi_boxes[{{num_boxes_pos + 1, num_boxes_pos + num_boxes_neg}}]
   
   local grad_cnn_features = self.gradInput
   grad_cnn_features:resizeAs(cnn_features):zero()
 
   -- Backprop RPN box regression loss
-  local grad_pos_trans
+  local grad_pos_anchors_trans
   self:timeit('box_reg_loss:backward', function()
     local crit = self.nets.box_reg_crit
     local weight = self.opt.mid_box_reg_weight
-    grad_pos_trans = crit:backward(self.pos_trans, self.pos_trans_targets)
+    grad_pos_anchors_trans = crit:backward(self.pos_anchors_trans, self.pos_anchors_trans_targets)
     -- Note that this is a little weird - it modifies a modules gradInput
     -- in-place, which could cause trouble if this gradient is reused.
-    grad_pos_trans:mul(weight)
+    grad_pos_anchors_trans:mul(weight)
   end)
 
   -- Backprop objectness loss
-  local grad_pos_scores, grad_neg_scores
+  local grad_pos_anchors_scores, grad_neg_anchors_scores
   self:timeit('objectness_loss:backward', function()
-    grad_pos_scores = self.nets.obj_crit_pos:backward(self.pos_scores, self.pos_labels)
+    grad_pos_anchors_scores = self.nets.obj_crit_pos:backward(self.pos_anchors_scores, self.pos_anchors_labels)
     --print('backward: ', self.neg_labels:nElement(), self.neg_labels:sum(), self.neg_scores:sum())
-    grad_neg_scores = self.nets.obj_crit_neg:backward(self.neg_scores, self.neg_labels)
+    grad_neg_anchors_scores = self.nets.obj_crit_neg:backward(self.neg_anchors_scores, self.neg_anchors_labels)
     -- Same problem as above - modifying gradients in-place may be dangerous
-    grad_pos_scores:mul(self.opt.mid_objectness_weight)
-    grad_neg_scores:mul(self.opt.mid_objectness_weight)
+    grad_pos_anchors_scores:mul(self.opt.mid_objectness_weight)
+    grad_neg_anchors_scores:mul(self.opt.mid_objectness_weight)
   end)
   
   -- Backprop RoI pooling
@@ -602,13 +652,24 @@ function layer:updateGradInput(input, gradOutput)
   self:timeit('sampler:backward', function()
     local grad_pos_data, grad_neg_data = {}, {}
     grad_pos_data[1] = grad_pos_boxes
-    grad_pos_data[3] = grad_pos_trans
-    grad_pos_data[4] = grad_pos_scores
     grad_neg_data[1] = grad_neg_boxes
-    grad_neg_data[4] = grad_neg_scores
     grad_rpn_out = self.nets.box_sampler_helper:backward(
                               {self.rpn_out, {gt_boxes, gt_labels}},
                               {grad_pos_data, grad_neg_data})
+  end)
+
+  self:timeit('anchor_target:backward', function()
+    local grad_pos_anchors_data, grad_neg_anchors_data = {}, {}
+    grad_pos_anchors_data[3] = grad_pos_anchors_trans
+    grad_pos_anchors_data[4] = grad_pos_anchors_scores
+    grad_neg_anchors_data[3] = grad_neg_anchors_trans
+    grad_neg_anchors_data[4] = grad_neg_anchors_scores
+    local tmp_grad_rpn_out = self.nets.anchor_target:backward(
+                              {self.rpn_out, {gt_boxes, gt_labels}},
+                              {grad_pos_anchors_data, grad_neg_anchors_data})
+    for k, v in pairs(grad_rpn_out) do
+      v:add(tmp_grad_rpn_out[k]) -- Not updating according to anchor_target
+    end
   end)
   
   -- Backprop RPN

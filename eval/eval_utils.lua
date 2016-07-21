@@ -80,7 +80,7 @@ function eval_utils.eval_split(kwargs)
     local msg = 'Processed image %s (%d / %d) of split %d, detected %d regions'
     local num_images = info.split_bounds[2]
     if max_images > 0 then num_images = math.min(num_images, max_images) end
-    local num_boxes = 0; for i = 1, #boxes do num_boxes = num_boxes + boxes[i]:size(1) end
+    local num_boxes = boxes[1]:size(1)
     print(string.format(msg, info.filename, counter, num_images, split, num_boxes))
 
     -- Break out if we have processed enough images

@@ -9,9 +9,11 @@ local BoxSampler, parent = torch.class('nn.BoxSampler', 'nn.Module')
 function BoxSampler:__init(options)
   parent.__init(self)
   options = options or {}
-  self.low_thresh = utils.getopt(options, 'low_thresh', 0.3)
-  self.high_thresh = utils.getopt(options, 'high_thresh', 0.7)
-  self.batch_size = utils.getopt(options, 'batch_size', 256)
+  self.fg_thresh = utils.getopt(options, 'fg_thresh', 0.5)
+  self.bg_low_thresh = utils.getopt(options, 'bg_low_thresh', 0.1)
+  self.bg_high_thresh = utils.getopt(options, 'bg_high_thresh', 0.5)
+  self.batch_size = utils.getopt(options, 'batch_size', 128)
+  self.fg_fraction = utils.getopt(options, 'fg_fraction', 0.5)
 
   self.nms_thresh = utils.getopt(options, 'nms_thresh', 0.7)
   self.num_proposals = utils.getopt(options, 'num_proposals', 2000)
@@ -151,8 +153,9 @@ function BoxSampler:updateOutput(input)
   target_idx = target_idx:view(N, B2)
 
   -- Pick positive and negative boxes based on IoU thresholds
-  self.pos_mask = torch.gt(input_max_iou, self.high_thresh) -- N x num_after_nms
-  self.neg_mask = torch.lt(input_max_iou, self.low_thresh)  -- N x num_after_nms
+  self.pos_mask = torch.gt(input_max_iou, self.fg_thresh) -- N x num_after_nms
+  self.neg_mask = torch.lt(input_max_iou, self.bg_high_thresh)
+    :cmul(torch.ge(input_max_iou, self.bg_low_thresh))  -- N x num_after_nms
 
   -- Count as positive each input box that has maximal IoU with each target box,
   -- even if it is outside the bounds or does not meet the thresholds.
@@ -160,7 +163,6 @@ function BoxSampler:updateOutput(input)
   -- positive box.
   self.pos_mask:scatter(2, target_idx, 1)
   self.neg_mask:scatter(2, target_idx, 0)
-
   
   self.pos_mask = self.pos_mask:view(num_after_nms):byte()
   self.neg_mask = self.neg_mask:view(num_after_nms):byte()
@@ -190,7 +192,7 @@ function BoxSampler:updateOutput(input)
   local total_pos = pos_mask_nonzero:size(1)
   local total_neg = neg_mask_nonzero:size(1)
 
-  local num_pos = math.min(self.batch_size / 2, total_pos)
+  local num_pos = math.min(math.floor(self.batch_size * self.fg_fraction), total_pos)
   local num_neg = self.batch_size - num_pos
 
   -- We always sample positives without replacemet

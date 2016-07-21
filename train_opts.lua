@@ -15,11 +15,13 @@ function M.parse(arg)
   -- Model settings
   cmd:option('-rpn_hidden_dim', 512,
     'Hidden size for the extra convolution in the RPN')
-  cmd:option('-sampler_batch_size', 256,
+  cmd:option('-rpn_batch_size', 256,
+    'Batch size to use in the rpn')
+  cmd:option('-sampler_batch_size', 128,
     'Batch size to use in the box sampler')
-  cmd:option('-sampler_high_thresh', 0.7,
+  cmd:option('-rpn_high_thresh', 0.7,
     'Boxes with IoU greater than this with a GT box are considered positives')
-  cmd:option('-sampler_low_thresh', 0.3,
+  cmd:option('-rpn_low_thresh', 0.3,
     'Boxes with IoU less than this with all GT boxes are considered negatives')
   cmd:option('-train_remove_outbounds_boxes', 1,
     'Whether to ignore out-of-bounds boxes for sampling at training time')
