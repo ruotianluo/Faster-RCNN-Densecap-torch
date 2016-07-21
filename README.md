@@ -1,46 +1,37 @@
-#DenseCap
+# Faster-RCNN based on DenseCap
 
-This is the code for the paper
+## Before all
 
-**[DenseCap: Fully Convolutional Localization Networks for Dense Captioning](http://cs.stanford.edu/people/karpathy/densecap/)**,
-<br>
-[Justin Johnson](http://cs.stanford.edu/people/jcjohns/)\*,
-[Andrej Karpathy](http://cs.stanford.edu/people/karpathy/)\*,
-[Li Fei-Fei](http://vision.stanford.edu/feifeili/),
-<br>
-(\* equal contribution)
-<br>
-To appear in [CVPR 2016](http://cvpr2016.thecvf.com/) (oral)
+This is the code for replicate Faster-RCNN in torch. Since Densecap provides many modules in common, so I just modify the code on this.
 
-The paper addresses the problem of **dense captioning**, where a computer detects objects in images and describes them in natural language. Here are a few example outputs:
+The most up-to-date branch is anchor_target.
 
-<img src='imgs/resultsfig.png'>
+### Difference between Faster-RCNN and my implementation
 
-The model is a deep convolutional neural network trained in an end-to-end fashion on the [Visual Genome](https://visualgenome.org/) dataset.
+The following differences are what as far as I know, there could be more.
 
-We provide:
+- I don't include the exact ground truth bounding box as positive candidates of the Fast-RCNN. (I only use the output of the RPN which are regarded as ground truth.)
+- The ROIPooling layer can be backpropagated through the boungding box coordinates.
 
-- A [pretrained model](#pretrained-model)
+## Current result on Pascal VOC
+I trained using VOCtrain2012+VOCtrainval2007 as training data, and use VOC test 2007 as validation data. The current Mean average precision on validation data is ~0.6.
+
+The main problem is my RPN doens't work well, the recall of 300 region proposals is only around 0.4. 
+
+## Introduction
+
+**[Faster R-CNN: Towards Real-Time Object Detection with Region Proposal Networks](http://arxiv.org/abs/1506.01497)**
+
+I provide:
+
 - Code to [run the model on new images](#running-on-new-images), on either CPU or GPU
-- Code to run a [live demo with a webcam](#webcam-demos)
-- [Evaluation code](#evaluation) for dense captioning
+- Code to run a [live demo with a webcam](#webcam-demos) (not tested yet)
+- [Evaluation code](#evaluation) for detection
 - Instructions for [training the model](#training)
-
-If you find this code useful in your research, please cite:
-
-```
-@inproceedings{densecap,
-  title={DenseCap: Fully Convolutional Localization Networks for Dense Captioning},
-  author={Johnson, Justin and Karpathy, Andrej and Fei-Fei, Li},
-  booktitle={Proceedings of the IEEE Conference on Computer Vision and 
-             Pattern Recognition},
-  year={2016}
-}
-```
 
 ## Installation
 
-DenseCap is implemented in [Torch](http://torch.ch/), and depends on the following packages: [torch/torch7](https://github.com/torch/torch7), [torch/nn](https://github.com/torch/nn), [torch/nngraph](https://github.com/torch/nngraph), [torch/image](https://github.com/torch/image), [lua-cjson](https://luarocks.org/modules/luarocks/lua-cjson), [qassemoquab/stnbhwd](https://github.com/qassemoquab/stnbhwd), [jcjohnson/torch-rnn](https://github.com/jcjohnson/torch-rnn)
+This project is implemented in [Torch](http://torch.ch/), and depends on the following packages: [torch/torch7](https://github.com/torch/torch7), [torch/nn](https://github.com/torch/nn), [torch/nngraph](https://github.com/torch/nngraph), [torch/image](https://github.com/torch/image), [lua-cjson](https://luarocks.org/modules/luarocks/lua-cjson), [qassemoquab/stnbhwd](https://github.com/qassemoquab/stnbhwd)
 
 After installing torch, you can install / update these dependencies by running the following:
 
@@ -50,7 +41,6 @@ luarocks install nn
 luarocks install image
 luarocks install lua-cjson
 luarocks install https://raw.githubusercontent.com/qassemoquab/stnbhwd/master/stnbhwd-scm-1.rockspec
-luarocks install https://raw.githubusercontent.com/jcjohnson/torch-rnn/master/torch-rnn-scm-1.rockspec
 ```
 
 ### (Optional) GPU acceleration
@@ -74,20 +64,6 @@ the [cuDNN bindings for Torch](https://github.com/soumith/cudnn.torch) by runnin
 ```bash
 luarocks install cudnn
 ```
-
-## Pretrained model
-
-You can download a pretrained DenseCap model by running the following script:
-
-```bash
- sh scripts/download_pretrained_model.sh
- ```
- 
- This will download a zipped version of the model (about 1.1 GB) to `data/models/densecap/densecap-pretrained-vgg16.t7.zip`, unpack
- it to `data/models/densecap/densecap-pretrained-vgg16.t7` (about 1.2 GB) and then delete the zipped version.
- 
- This is not the exact model that was used in the paper, but is has comparable performance; using 1000 region proposals per image,
- it achieves a mAP of 5.70 on the test set which is slightly better than the mAP of 5.39 that we report in the paper.
 
 ## Running on new images
 
@@ -133,9 +109,9 @@ The `run_model.lua` script has several other flags; you can [find details here](
 
 To train a new DenseCap model, you will following the following steps:
 
-1. Download the raw images and region descriptions from [the Visual Genome website](https://visualgenome.org/api/v0/api_home.html)
-2. Use the script `preprocess.py` to generate a single HDF5 file containing the entire dataset
-   [(details here)](doc/FLAGS.md#preprocesspy)
+1. Download the raw images and ground truths from [the VOC2012](http://host.robots.ox.ac.uk/pascal/VOC/voc2012/#devkit), [the VOC2007](http://host.robots.ox.ac.uk/pascal/VOC/voc2007/#devkit).
+2. Use the script `preprocess2.py` to generate a single HDF5 file containing the entire dataset except the raw images. You can specify your own split file to merge two datasets.
+   [(details here)](doc/FLAGS.md#preprocess2py)
 3. Use the script `train.lua` to train the model [(details here)](doc/FLAGS.md#trainlua)
 4. Use the script `evaluate_model.lua` to evaluate a trained model on the validation or test data
    [(details here)](doc/FLAGS.md#evaluate_modellua)
@@ -145,20 +121,13 @@ For more instructions on training see [INSTALL.md](doc/INSTALL.md) in `doc` fold
 
 ## Evaluation
 
-In the paper we propose a metric for automatically evaluating dense captioning results.
-Our metric depends on [METEOR](http://www.cs.cmu.edu/~alavie/METEOR/README.html), and
-our evaluation code requires both Java and Python 2.7. The following script will download
-and unpack the METEOR jarfile:
-
-```bash
-sh scripts/setup_eval.sh
-```
+In the paper we provide the code to calculate the mean average precision.
 
 The evaluation code is **not required** to simply run a trained model on images; you can
 [find more details about the evaluation code here](eval/README.md).
 
 
-## Webcam demos
+## Webcam demos(not tested)
 
 If you have a powerful GPU, then the DenseCap model is fast enough to run in real-time. We provide two
 demos to allow you to run DenseCap on frames from a webcam.

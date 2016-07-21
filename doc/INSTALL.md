@@ -8,7 +8,6 @@ DenseCap is implemented in [Torch](http://torch.ch/), and depends on the followi
 - [torch/image](https://github.com/torch/image)
 - [lua-cjson](https://luarocks.org/modules/luarocks/lua-cjson)
 - [qassemoquab/stnbhwd](https://github.com/qassemoquab/stnbhwd)
-- [jcjohnson/torch-rnn](https://github.com/jcjohnson/torch-rnn)
 
 After installing torch, you can install / update these dependencies by running the following:
 
@@ -70,10 +69,8 @@ You will also need DeepMind's [HDF5 bindings for Torch](https://github.com/deepm
 luarocks install https://raw.githubusercontent.com/deepmind/torch-hdf5/master/hdf5-0-0.rockspec
 ```
 
-You will need to download the pretrained VGG-16 model and the [METEOR](http://www.cs.cmu.edu/~alavie/METEOR/README.html)
-evaluation code; you can do this by running the following scripts from the root directory:
+You will need to download the pretrained VGG-16 model; you can do this by running the following scripts from the root directory:
 
 ```bash
 sh scripts/download_models.sh
-sh scripts/setup_eval.sh
 ```
