@@ -224,6 +224,7 @@ while true do
     -- Only save t7 checkpoint if there is an improvement in mAP
     if best_val_score == nil or results.ap_results.map > best_val_score then
       best_val_score = results.ap_results.map
+      checkpoint.best_val_score = best_val_score
       -- save the optim state, for better resuming
       checkpoint.optim_state = optim_state
       checkpoint.cnn_optim_state = cnn_optim_state

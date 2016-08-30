@@ -24,6 +24,7 @@ The main problem is my RPN doens't work well, the recall of 300 region proposals
 
 I provide:
 
+- A [pretrained model](#pretrained-model)
 - Code to [run the model on new images](#running-on-new-images), on either CPU or GPU
 - Code to run a [live demo with a webcam](#webcam-demos) (not tested yet)
 - [Evaluation code](#evaluation) for detection
@@ -64,6 +65,17 @@ the [cuDNN bindings for Torch](https://github.com/soumith/cudnn.torch) by runnin
 ```bash
 luarocks install cudnn
 ```
+
+## Pretrained model
+
+You can download a pretrained faster rcnn model by running the following script:
+
+```bash
+ sh scripts/download_pretrained_model.sh
+ ```
+ 
+ This will download a zipped version of the model (about 2.7 GB) to `data/models/' (Sorry about the size.)
+ This pretrained model is just for trial.
 
 ## Running on new images
 
