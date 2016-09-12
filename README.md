@@ -2,19 +2,21 @@
 
 ## Before all
 
-This is the code for replicate Faster-RCNN in torch. Since Densecap provides many modules in common, so I just modify the code on this.
+This is an attempt to replicate Faster-RCNN in torch. Since Densecap provides many modules in common, so I just modified the code on this.
 
-The most up-to-date branch is anchor_target.
+[The current result](#current-result-on-pascal-voc) is not good enough (actually much worse than result in Faster-RCNN paper). Feel free to contribute.
 
-### Difference between Faster-RCNN and my implementation
+(I didn't expect this to be seen suddenly by many people. Please blame me if I have many bugs.)
+
+### Difference between Faster-RCNN and this implementation
 
 The following differences are what as far as I know, there could be more.
 
 - I don't include the exact ground truth bounding box as positive candidates of the Fast-RCNN. (I only use the output of the RPN which are regarded as ground truth.)
-- The ROIPooling layer can be backpropagated through the boungding box coordinates.
+- The ROIPooling layer can be backpropagated through the boungding box coordinates. (Same as in DenseCap)
 
 ## Current result on Pascal VOC
-I trained using VOCtrain2012+VOCtrainval2007 as training data, and use VOC test 2007 as validation data. The current Mean average precision on validation data is ~0.6.
+I trained using VOCtrain2012+VOCtrainval2007 as training data, and use VOC test 2007 as validation data. The current Mean average precision on validation data is ~0.6 (0.73 in Faster-RCNN).
 
 The main problem is my RPN doens't work well, the recall of 300 region proposals is only around 0.4. 
 
@@ -26,8 +28,8 @@ I provide:
 
 - A [pretrained model](#pretrained-model)
 - Code to [run the model on new images](#running-on-new-images), on either CPU or GPU
-- Code to run a [live demo with a webcam](#webcam-demos) (not tested yet)
-- [Evaluation code](#evaluation) for detection
+~~- Code to run a [live demo with a webcam](#webcam-demos) (not tested yet)~~
+- [Evaluation code](#evaluation) for detection (sample results not provided)
 - Instructions for [training the model](#training)
 
 ## Installation
@@ -42,6 +44,7 @@ luarocks install nn
 luarocks install image
 luarocks install lua-cjson
 luarocks install https://raw.githubusercontent.com/qassemoquab/stnbhwd/master/stnbhwd-scm-1.rockspec
+luarocks install --server=http://luarocks.org/dev torch-rnn
 ```
 
 ### (Optional) GPU acceleration
@@ -74,7 +77,7 @@ You can download a pretrained faster rcnn model by running the following script:
  sh scripts/download_pretrained_model.sh
  ```
  
- This will download a zipped version of the model (about 2.7 GB) to `data/models/' (Sorry about the size.)
+ This will download a zipped version of the model (about 2.7 GB) to `data/models/' (Sorry about the size. I didn't clean it.)
  This pretrained model is just for trial.
 
 ## Running on new images
@@ -125,21 +128,24 @@ To train a new DenseCap model, you will following the following steps:
 2. Use the script `preprocess2.py` to generate a single HDF5 file containing the entire dataset except the raw images. You can specify your own split file to merge two datasets.
    [(details here)](doc/FLAGS.md#preprocess2py)
 3. Use the script `train.lua` to train the model [(details here)](doc/FLAGS.md#trainlua)
-4. Use the script `evaluate_model.lua` to evaluate a trained model on the validation or test data
-   [(details here)](doc/FLAGS.md#evaluate_modellua)
+~~4. Use the script `evaluate_model.lua` to evaluate a trained model on the validation or test data
+   [(details here)](doc/FLAGS.md#evaluate_modellua)~~
+
+```bash
+th train.lua -anchor_type voc -image_size ^600 -data_h5 data/voc_all.h5 -data_json data/voc_all.json -learning_rate 1e-4 -optim adam
+```
 
 For more instructions on training see [INSTALL.md](doc/INSTALL.md) in `doc` folder.
-
 
 ## Evaluation
 
 In the paper we provide the code to calculate the mean average precision.
 
-The evaluation code is **not required** to simply run a trained model on images; you can
-[find more details about the evaluation code here](eval/README.md).
+~~The evaluation code is **not required** to simply run a trained model on images; you can
+[find more details about the evaluation code here](eval/README.md).~~
 
-
-## Webcam demos(not tested)
+~~
+## Webcam demos(not modified)
 
 If you have a powerful GPU, then the DenseCap model is fast enough to run in real-time. We provide two
 demos to allow you to run DenseCap on frames from a webcam.
@@ -164,8 +170,10 @@ You can start the demo by running the following:
 ```bash
 qlua webcam/single_machine_demo.lua
 ```
+~~
 
-### Client / server demo
+
+### Client / server demo (not modified)
 If you have a machine with a powerful GPU and another machine with a webcam, then
 this demo allows you use the GPU machine as a server and the webcam machine as a client; frames will be
 streamed from the client to to the server, the model will run on the server, and predictions will be shipped
@@ -230,4 +238,5 @@ you will see the following:
 
 Afterward you should see a message telling you that the DenseCap server is running, and
 the web client should work after refreshing.
+
 

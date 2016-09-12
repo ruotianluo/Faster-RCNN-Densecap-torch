@@ -16,6 +16,7 @@ There are some common flags that are shared by many Lua scripts:
 - `-gpu`: The (zero-indexed) index of the GPU to use. Setting this to -1 will run in CPU-only mode.
 - `-use_cudnn`: Setting this to 1 will enable the use of the [cuDNN](https://developer.nvidia.com/cudnn) library when
   running in GPU mode. Setting this to 0 will fall back to the default torch implementation of cuDNN layers.
+- `-anchor_type`: The type of anchors used. Could choose from densecap, voc and coco (voc and coco is that in the faster-rcnn code)
 
 ## preprocess2.py
 The script `preprocess2.py` is used to preprocess a dataset of images, regions from Pascal VOC, and convert the entire
@@ -86,10 +87,12 @@ In most cases the only settings you will need to change are `-learning_rate`, `-
 training from a checkpoint rather than training from scratch, `-finetune_cnn_after` to enable finetuning of the CNN,
 and `-checkpoint_path` to change the location of saved checkpoints.
 
+~~
 ## evaluate_model.lua
 The script `evaluate_model.lua` is used to quantitatively evaluate a trained model using our mean average precision metric;
 a model is run on images in a preprocessed dataset that has been created by `preprocess.py`.
 This script assumes that METEOR has been downloaded by running `scripts/setup_eval.sh`, and requires both Python and Java.
+~~
 
 The following flags are available:
 
